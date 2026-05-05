@@ -1,161 +1,95 @@
-\chapter{引用与注释}\label{chap:reference}
+\chapter{进程管理与用户程序支持}\label{chap:proc-user}
 
-本章介绍参考文献引用、脚注和交叉引用的使用方法。
+进程管理连接了前文讨论的地址空间、Trap 机制和系统调用接口，也是教学操作系统中最容易观察系统行为的一部分。用户在 Shell 中输入命令后，内核需要创建进程、切换上下文、装入可执行文件、维护父子关系，并在程序结束或收到信号时完成资源回收。Unix V6++ 原 IA-32/C++ 版本保留了早期 Unix 的进程状态机、\verb|sleep|/\verb|wakeup|、\verb|fork|/\verb|exec|/\verb|wait| 等核心语义；当前 RISC-V/Rust 版本在尽量保持这些语义的基础上，重写了与体系结构、地址空间和资源生命周期密切相关的实现。
 
-\section{参考文献引用}
+本章围绕进程模型与调度、进程生命周期、ELF 用户程序加载和信号机制展开。由于文件系统和内存管理已有独立工作，本章只在进程实现需要的位置说明其接口关系，重点放在进程控制块、上下文切换、用户程序启动和用户态异常处理上。
 
-在学术论文或科技报告中，通常需要引用相关文献以支持观点或论证。为了方便读者查阅，我们需要在论文中标注参考文献。在 \LaTeX\ 中，可使用 \verb|\cite| 命令引用参考文献。参考文献的外观应符合国标 GB/T 7714，本模板提供两种方式：
-\begin{enumerate}
-    \item 使用 \BibTeX{} 配合 \pkg{gbt7714} 宏包
-    \item 使用 \BibLaTeX{} 配合 \pkg{biblatex-gb7714-2015} 样式包
-\end{enumerate}
-其中，\BibLaTeX{} 方案功能更为丰富（支持 \cs{fullcite}、\cs{footfullcite} 等命令），且由 \texttt{biber} 引擎驱动，对 Unicode 和中文文献支持更好，是本模板的\textbf{默认推荐}方案。不过，\texttt{biber} 的编译速度较 \texttt{bibtex} 慢，在文献条目较多时差异尤为明显。\BibTeX{} 方案编译更快，且部分期刊投稿仍要求使用，如对编译速度敏感或有投稿需求，可设置 \texttt{biblatex=false} 切换至 \BibTeX{} 方案。
+\section{进程模型与调度}
 
-两种方式都能实现符合国标的参考文献格式。可通过文档类选项 \texttt{biblatex=true}（默认）或 \texttt{biblatex=false} 进行切换。无论选择哪种方式，均使用 \cs{tjbibresource} 命令在导言区指定参考文献数据库文件，使用 \cs{makereferences} 命令在正文中输出参考文献列表：
+当前系统中的进程控制块定义在 \verb|src/proc/process.rs|。其主体结构 \verb|Process| 保留了 Unix V6++ 的核心字段：\verb|pid|、\verb|ppid|、用户标识、进程状态、优先级、CPU 使用计数、睡眠通道、信号信息以及打开文件、当前目录等进程私有状态所在的 \verb|Userspace| 关联关系。进程状态仍采用 \verb|SNULL|、\verb|SSLEEP|、\verb|SWAIT|、\verb|SRUN|、\verb|SIDL|、\verb|SZOMB| 和 \verb|SSTOP| 等名称，与原系统和 Unix V6 的教学语义保持一致\cite{arpaci2019ostep,xv6_book_2023}。这种保留使学生在阅读重构后代码时，仍能把实验现象与经典教材中的进程状态转换对应起来。
 
-\begin{Verbatim}
-\tjbibresource{bib/references.bib}  % 导言区指定 .bib 文件
-...
-\makereferences                     % 正文中输出参考文献
-\end{Verbatim}
+与原 \verb|main| 分支相比，进程表的组织方式发生了变化。原版本在 \verb|ProcessManager| 中维护固定长度的 \verb|process[NPROC]| 数组，空闲项通过 \verb|p_stat == SNULL| 标识；当前版本使用 \verb|Vec<Box<Process>>| 保存已存在的进程，创建新进程时分配一个 \verb|Box<Process>|，父进程 \verb|wait| 到僵尸子进程后直接从向量中移除。固定数组更接近早期 Unix 的实现方式，便于展示“进程槽位”的概念；当前实现则让进程对象和内核栈、用户页等资源的所有权关系更清楚。特别是在子进程被回收时，\verb|Box| 被移除后会触发其内部字段的析构逻辑，配合 \verb|KernelStack|、\verb|TextRef| 等类型，减少了“状态已清空但资源仍需手动释放”的隐含步骤。
 
-如需指定多个 \texttt{.bib} 文件，可用逗号分隔：\verb|\tjbibresource{file1.bib,file2.bib}|。
+RISC-V 下的进程切换由 \verb|TaskContext| 和 \verb|ProcessManager::switch_to| 共同完成。\verb|TaskContext| 保存被调用者保存寄存器 \verb|s0| 到 \verb|s11|、内核栈指针 \verb|sp|、返回地址 \verb|ra| 和 \verb|sstatus|。切换时，内核先通过 \verb|IrqGuard::disable_save| 关闭中断，切换当前 \verb|Userspace| 窗口和用户页表映射，更新 \verb|sscratch| 为目标进程的 \verb|TrapContext| 地址，随后执行汇编函数 \verb|TaskContext::switch| 保存当前内核执行流并恢复目标进程的内核执行流。这里的 \verb|IrqGuard| 是一个较典型的 Rust 风格封装：代码仍然在做非常底层的中断开关操作，但“离开作用域时恢复中断状态”的责任由对象生命周期承担，调用者不必在多条错误路径上重复书写恢复逻辑\cite{rust_reference}。
 
-在正文中，使用 \cs{cite} 命令引用参考文献；\verb|key| 为参考文献数据库中条目的唯一标识符，多个键用逗号分隔：
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.95\textwidth]{figures/process-scheduler.pdf}
+  \caption{进程调度与上下文切换路径}\label{fig:process-scheduler}
+\end{figure}
 
-\begin{Verbatim}
-这是一个引用示例 \cite{book1}。
-多文献引用 \cite{book1,online1}。
-\end{Verbatim}
+\figref{fig:process-scheduler} 展示了当前调度路径。0 号进程仍承担调度器角色，\verb|ProcessManager::schedule| 在循环中调用 \verb|select| 选择可运行进程。\verb|select| 会跳过非 \verb|SRUN|、未装入内存或系统进程标记不合适的进程，并选择优先级数值最小的进程运行。为了避免总是从进程表开头扫描，当前实现使用 \verb|LAST_IDX| 记录上一次选择位置，从下一项开始环形搜索。时钟中断周期性更新进程的 \verb|cpu|、\verb|time| 和优先级，并在从用户态返回前检查 \verb|runrun| 标志；若需要重新调度，则切换到 0 号进程，再由调度器选择下一个目标进程。
 
-\cs{cite} 命令产生上标数字引用（如“……方法\textsuperscript{[1,2]}”），适合不影响行文流畅性的场景。
+原 IA-32/C++ 版本的切换过程依赖 \verb|SaveU|、\verb|RetU|、\verb|SwtchUStruct| 等宏保存 \verb|esp|、\verb|ebp| 并修改内核页表中的用户区映射，还需要考虑 TSS、段选择子和 x86 中断返回栈帧。当前 RISC-V 版本不再使用 IA-32 的 TSS 和分段机制，而是依赖 \verb|satp| 对应的页表、\verb|sscratch| 中保存的上下文指针以及 \verb|sret| 返回用户态。这并不改变 Unix 风格调度策略本身，却把体系结构相关的部分压缩到少量 RISC-V 汇编和上下文结构中，使进程调度的主体逻辑更多地保留在 Rust 函数中。
 
-使用 \verb|\cite{key1,key2,key3...}| 命令可在正文中产生上标引用，如\cite{book1,online1,article1}。以下是使用 \verb|\cite| 命令的引用示例：
-\begin{itemize}
-  \item 普通图书\cite{book1,book2}
-  \item 论文集、会议录\cite{conf1,conf2}
-  \item 科技报告\cite{techreport1,techreport2}
-  \item 学位论文\cite{thesis1,thesis2,thesis3}
-  \item 专利文献\cite{patent1,patent2}
-  \item 专著中析出的文献\cite{inbook1,inbook2}
-  \item 期刊中析出的文献\cite{qin2021,article1,guo_deepseek-r1_2025}
-  \item 报纸中析出的文献\cite{newspaper1,newspaper2}
-  \item 电子文献\cite{online1,online2,online3}
-\end{itemize}
+睡眠与唤醒机制也沿用了 Unix 风格的通道模型。当前系统将“等待对象”抽象为 \verb|Channel| trait，只要能转为一个稳定地址，就可以作为睡眠通道。进程进入不可中断睡眠时使用 \verb|SSLEEP|，进入可被信号打断的用户睡眠时使用 \verb|SWAIT|；\verb|wakeup_all| 扫描进程集合，将睡在对应通道上的进程重新置为 \verb|SRUN|。这种模型被文件、管道、缓冲区、TTY 和定时睡眠共同使用，但在接口层面只暴露“通道地址”和“优先级”两个关键概念，符合教学内核对机制透明性的要求。
 
-可使用 \verb|\nocite{key1,key2,key3...}| 将参考文献条目加入文献表中，但不在正文中引用。使用 \verb|\nocite{*}| 可将参考文献数据库中的所有条目加入文献表中。
+\section{进程生命周期管理}
 
-在编写 \texttt{.bib} 文件时，需注意以下常见问题：
-\begin{itemize}
-  \item 每个条目的键值（如 \texttt{book1}）在整个 \texttt{.bib} 文件中必须唯一；
-  \item 常见的条目类型包括 \texttt{@book}（图书）、\texttt{@article}（期刊论文）、\texttt{@inproceedings}（会议论文）、\texttt{@phdthesis}（博士论文）、\texttt{@mastersthesis}（硕士论文）、\texttt{@online}（网络资源）等；
-  \item 中文作者姓名之间使用 \texttt{and} 连接，而非顿号或逗号；
-  \item 建议使用 Zotero、Mendeley 等软件管理参考文献，可自动生成规范的 \texttt{.bib} 文件。
-\end{itemize}
+用户进程的主要生命周期由 \verb|fork|、\verb|exec|、\verb|exit| 和 \verb|wait| 串联起来。当前系统保留了 Unix 中“先复制当前进程，再在子进程中执行新程序”的模型：Shell 启动外部命令时先调用 \verb|fork| 创建子进程，子进程通过 \verb|execv| 替换为目标程序，父进程根据是否为后台任务决定是否调用 \verb|wait| 等待子进程结束。这个路径既支撑了命令执行，也支撑了管道和重定向等 Shell 行为。
 
-% \fullcite 仅在 biblatex=true 时定义；未定义则跳过本节
-\ifx\fullcite\undefined\else
-\subsection{\BibLaTeX{}特有的引用命令}
+\verb|fork| 的实现位于 \verb|ProcessManager::fork|。内核首先调用 \verb|new_proc| 创建子进程控制块，并复制父进程的用户区描述、打开文件状态、当前目录、文本段引用等信息。用户地址空间采用实际内存复制：系统为子进程分配新的用户页，把父进程当前驻留的用户数据复制到新页中，然后为子进程建立独立映射。如果暂时不能分配足够的用户页，则沿用 Unix V6++ 中已有的交换区路径，将子进程图像写入交换区并设置 \verb|SSWAP| 标志。这里的重点不是改变 \verb|fork| 的语义，而是在 RISC-V 页表和 Rust 资源模型下重新实现同样的“父子进程从同一执行点分叉”的效果。
 
-当使用 \pkg{biblatex} 宏包时，有一些额外的引用命令可供使用。
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.95\textwidth]{figures/process-lifecycle.pdf}
+  \caption{fork、exec、exit 与 wait 的生命周期关系}\label{fig:process-lifecycle}
+\end{figure}
 
-\subsubsection{完整引用}
+为了让子进程从 \verb|fork| 返回值为 0 的位置继续执行，当前系统在 \verb|set_fork_return_context| 中复制父进程保存的 \verb|TrapContext|，将子进程的内核入口设置为 \verb|fork_ret|，并把子进程上下文中的 \verb|a0| 置为 0。父进程则直接从系统调用返回，返回值为子进程 pid。原 C++ 版本通过 \verb|NewProc| 和 \verb|Swtch| 的返回路径区分父子进程：父进程路径返回 0，子进程被调度恢复后返回 1，再由 \verb|Fork| 设置不同的 \verb|EAX| 返回值。两种实现都服务于同一接口约定；当前版本把返回差异显式写入 RISC-V 的 \verb|TrapContext|，更贴近系统调用 ABI 本身。
 
-当我们想在正文（非参考文献章节）中插入对某一参考文献的完整引用时，可以使用 \verb|\fullcite{key1}| 命令。下面是使用 \verb|\fullcite| 命令的引用示例：
+\verb|exec| 负责将当前进程替换为新的用户程序。它首先通过文件系统路径查找 inode，检查执行权限和普通文件属性，并用 \verb|ELFParser| 解析可执行文件。解析成功后，内核更新 \verb|Userspace::mem| 中的 \verb|text|、\verb|data|、\verb|stack| 等布局信息，释放旧文本段引用，扩展进程图像，建立新的用户页表映射，再把 ELF 的可装入段写入用户空间。随后，内核从传入的 \verb|argv| 指针复制参数字符串，在用户栈顶按 RISC-V ABI 习惯构造 \verb|argc| 和 \verb|argv|，最后调用 \verb|prepare_user_context| 设置 \verb|sepc|、用户栈指针以及 \verb|a0|、\verb|a1|。当 Trap 返回执行 \verb|sret| 后，进程便从新程序入口开始运行。
 
-\begin{itemize}
-    \item \fullcite{qin2021}
-\end{itemize}
+进程退出时，\verb|Process::exit| 会清空信号处理函数，关闭打开文件，释放当前目录引用，显式释放 \verb|Userspace| 中堆分配的用户页表数组，释放文本段和用户页，将状态置为 \verb|SZOMB|，唤醒父进程并把仍以自己为父的子进程转交给 1 号进程。这里仍能看到 Unix V6++ 的处理顺序，但 Rust 版本把若干资源的释放改写为对象所有权转移：例如 \verb|proc.text.take()| 会减少文本段引用，\verb|pages.take()| 后交还用户页管理器，父进程 \verb|wait| 时移除 \verb|Box<Process>|，使内核栈随进程对象一并回收。与原版本在 \verb|Exit| 中逐项清空字段、释放内存、把进程槽改回可用相比，当前实现减少了“对象还在但逻辑已失效”的中间状态。
 
-\subsubsection{脚注引用}
+\verb|wait| 的实现会扫描进程集合，查找父 pid 等于当前进程 pid 的子进程。如果发现 \verb|SZOMB| 子进程，返回其 pid 并移除该进程对象；如果存在子进程但尚未退出，则当前进程睡眠在自身地址对应的通道上；如果不存在子进程，则返回 \verb|ECHILD|。原 C++ 版本会从交换区读回子进程退出时保存的 \verb|User| 结构，以统计子进程时间并取出退出码。当前版本已经保留了等待和回收的主体语义，但对子进程时间累计和退出状态保存仍较简化，这也是后续可完善之处。
 
-有时，我们想要用脚注的形式引用某参考文献，那么我们可以使用 \verb|\footfullcite{key1}| 命令\footfullcite{qin2021}.
-\fi
+\section{ELF 用户程序加载}
 
+当前系统的用户态程序以 ELF64/RISC-V 可执行文件形式存在，内核加载器位于 \verb|src/loader/mod.rs|。加载器首先读取 ELF 头，检查魔数、64 位格式、小端编码、可执行文件类型、RISC-V 机器类型以及程序头大小等字段；随后读取程序头表，筛选 \verb|PT_LOAD| 段，并按照虚拟地址排序。加载器根据可写段的位置划分文本段和数据段，计算文本长度、数据长度、默认栈大小以及入口地址。如果段布局越过用户空间上限，则加载失败并向系统调用返回错误。
 
-\section{脚注}
+这一实现与原 \verb|main| 分支有明显的工作重心差异。原版本主要通过 \verb|PEParser| 支持用户态程序，同时保留了一个面向 32 位 x86 ELF 的探索性加载器；其中部分地址转换依赖 \verb|0xC0000000| 这样的 IA-32 内核映射常量，段布局也与当时工具链生成的 PE 文件结构关系较紧。当前版本则把 ELF64/RISC-V 作为主要用户程序格式，直接读取程序头而不是依赖节名顺序，并把入口地址、段权限和用户空间边界检查集中在 \verb|ELFParser| 中。这种处理更适合交叉编译生成的 RISC-V 用户程序，也便于和 QEMU virt 平台上的调试流程配合。
 
-脚注是一种在文本底部添加注释或补充说明的方式。在 \LaTeX\ 中，可以使用 \verb|\footnote| 命令添加脚注。例如，在文本中需要添加脚注时，可以在需要添加脚注的单词或句子后面使用 \verb|\footnote| 命令，如下所示：
+装入阶段由 \verb|ELFParser::relocate| 完成。对于每个需要装入的段，内核先把目标内存区清零，再从 inode 中按文件偏移读取段内容。文本段在正常运行时映射为只读、可执行；装入时若需要写入文本页，加载器会临时打开对应页表项的写权限，写入完成后再去掉写权限并刷新 TLB。这个过程仍涉及底层指针写入和页表位修改，因而不可避免地使用 \verb|unsafe|；不过，段描述、权限判断和边界计算被放在普通 Rust 结构和方法中，底层操作的范围比较集中。
 
-\begin{Verbatim}
-脚注是一种在文本底部添加注释或补充说明的方式\footnote{通常，我们在脚注里也写完整的句子。在文本中使用脚注时，应该遵循学术规范，尽可能引用可信的来源，并注明出处。}。
-\end{Verbatim}
+用户栈构造是 \verb|exec| 成功后进入新程序前的最后一步。当前系统用一个小型 \verb|Stack| 辅助结构从 \verb|MemoryDescriptor::USER_SPACE_END| 向低地址压入参数字符串和指针数组。参数字符串按逆序复制，字符串写入后进行 16 字节对齐，再压入空指针、各参数指针，最终得到 \verb|argc| 与 \verb|argv|。随后，\verb|prepare_user_context| 将 \verb|a0| 设置为 \verb|argc|，将 \verb|a1| 设置为 \verb|argv| 指针，并把 \verb|sepc| 设置为 ELF 入口。用户态的 \verb|crt0.c| 负责设置全局指针并调用 \verb|main1|，程序返回后通过系统调用 \verb|exit| 结束。
 
-其中，花括号中的文本就是脚注的内容。编译文档后，脚注会出现在页面底部，并自动标上数字：脚注是一种在文本底部添加注释或补充说明的方式\footnote{通常，我们在脚注里也写完整的句子。在文本中使用脚注时，应该遵循学术规范，尽可能引用可信的来源，并注明出处。}。
+\begin{table}[htbp]
+  \centering
+  \caption{用户程序加载相关实现对比}\label{tab:loader-before-after}
+  \begin{tabular}{p{0.28\textwidth}p{0.31\textwidth}p{0.31\textwidth}}
+    \toprule
+    对比项 & main 分支 IA-32/C++ 版本 & 当前 RISC-V/Rust 版本 \\
+    \midrule
+    主要程序格式 & 以 PE 用户程序为主，ELF 加载器为补充实现 & 以 ELF64/RISC-V 可执行文件为主 \\
+    用户入口 & 通过 x86 Trap 返回栈帧和运行时入口进入用户态 & 通过 \verb|TrapContext| 设置 \verb|sepc|、\verb|a0|、\verb|a1| 后 \verb|sret| 进入用户态 \\
+    段装载依据 & 与 PE 节表及特定布局关系较紧 & 依据 ELF Program Header 的 \verb|PT_LOAD| 段 \\
+    地址相关常量 & 包含 IA-32 内核高地址映射相关假设 & 使用 RISC-V 用户空间上限、页表项权限和 TLB 刷新接口 \\
+    参数传递 & 在切换新图像前备份并重建用户栈 & 在 Rust \verb|Stack| 辅助结构中构造 \verb|argc/argv| \\
+    \bottomrule
+  \end{tabular}
+\end{table}
 
-按 2026 同济模板规范，脚注编号以 \Circled{1}、\Circled{2}、\Circled{3}… 等带圈形式呈现，由模板自动渲染，无需显式切换。
+\section{信号机制}
 
-\section{交叉引用}
+信号机制把异常处理、终端输入和进程控制连接在一起。当前系统在 \verb|constants.rs| 中定义 \verb|Signal| 枚举，在 \verb|Process| 中使用 \verb|Option<Signal>| 表示待处理信号，在 \verb|Userspace| 中保存每个信号号对应的用户态处理函数地址。用户程序通过 \verb|signal| 系统调用安装处理函数，通过 \verb|kill| 系统调用向指定进程或同一终端上的进程组发送信号；终端层在收到控制字符时也会调用进程管理器发送 \verb|SIGINT|、\verb|SIGQUIT| 或 \verb|SIGTSTP|。
 
-在文档中，交叉引用是指引用文档中的某个标签或标记，例如章节、图表、公式或页码等。在 \LaTeX\ 中，可以使用 \verb|\label| 命令为文档中的对象添加标签，使用 \verb|\ref| 命令或 \verb|\pageref| 命令进行引用。
+原 C++ 版本中，进程控制块使用 \verb|p_sig| 记录一个待处理信号，\verb|User::u_signal| 保存处理函数地址，\verb|PSig| 在用户态返回前改写 x86 Trap 上下文中的 \verb|eip| 和 \verb|esp|。当前版本保留了“单个待处理信号 + 用户态处理函数表”的基本模型，但把信号号从裸整数改成 \verb|Signal| 枚举，并通过 \verb|TryFrom<u32>| 对用户传入的信号号进行范围检查。这样，系统调用入口仍接受传统整数 ABI，内核内部处理时却能避免把任意整数直接当作有效信号使用。
 
-为便于管理，建议为标签采用统一的命名前缀：
-\begin{center}
-\begin{tabular}{llll}
-  \toprule
-  章：\verb|chap:a| & 节：\verb|sec:b| & 图：\verb|fig:c| & 表：\verb|tab:d| \\
-  公式：\verb|eq:e| & 算法：\verb|algo:f| & 代码：\verb|lst:g| & 定理：\verb|thm:h| \\
-  \bottomrule
-\end{tabular}
-\end{center}
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.95\textwidth]{figures/signal-delivery.pdf}
+  \caption{信号产生、递送与返回流程}\label{fig:signal-delivery}
+\end{figure}
 
-例如，在文档中的某个章节中添加一个标签：
+\figref{fig:signal-delivery} 给出了信号处理的主要路径。信号可以来自三类入口：一是用户程序调用 \verb|kill|；二是 TTY 在读入控制字符时向相关进程发送信号；三是异常处理模块把用户态非法指令、访问异常或页面异常转换为相应信号。信号写入 \verb|pending_signal| 后，内核不会立即打断任意内核执行流，而是在系统调用入口、系统调用返回后、时钟中断返回前以及异常处理结束等边界调用 \verb|should_process|。若信号需要处理，\verb|process_signal| 会取出用户注册的处理函数地址；如果未安装处理函数，则按默认方式结束进程。
 
-\begin{Verbatim}
-\chapter{引言}
-\label{chap:intro}
-这是一段引言。
-\end{Verbatim}
+当用户安装了处理函数时，内核会把当前 \verb|TrapContext| 复制到用户栈上，然后修改当前上下文：\verb|sepc| 指向用户处理函数，\verb|ra| 指向用户空间第 0x10 处的信号返回跳板，用户栈指针下移到保存的上下文位置。这个跳板由内核在用户页表第 0 页映射一页只读、可执行的代码，其中包含设置系统调用号并执行 \verb|ecall| 的短指令序列。处理函数返回后会进入 \verb|SIGRET| 系统调用，内核从用户栈读取先前保存的 \verb|TrapContext| 并恢复，使用户程序回到被信号打断前的位置。
 
-然后，在文档的其他位置使用 \verb|\ref| 命令来引用这个标签：
+这种实现延续了 Unix 式信号“异步产生、在安全边界递送”的基本特征，也体现了 RISC-V/Rust 重构后的若干变化。首先，信号递送直接操作 \verb|TrapContext|，不再需要构造 x86 专用的 \verb|eip|、段寄存器和 \verb|eflags| 栈帧。其次，默认处理、用户处理和 \verb|sigret| 恢复都通过清晰的函数路径表达，便于调试。最后，信号处理函数表跟随 \verb|Userspace|，在 \verb|exec| 后会被清空，避免新程序继承旧程序的处理函数地址。当前信号实现仍是教学内核级别的简化模型，例如未实现完整的信号屏蔽字和多个排队信号，但已经能支撑终端中断、用户自定义处理函数和常见异常到信号的转换。
 
-\begin{Verbatim}
-请参见第 \ref{chap:intro} 章。
-\end{Verbatim}
+\section{本章小结}
 
-这样，就可以在文档中产生“请参见第 X 章”的效果，其中 X 为标签所在章的编号。
+本章介绍了当前 RISC-V/Rust 版本 Unix V6++ 的进程管理与用户程序支持实现。系统在语义上保留了 Unix V6++ 的进程状态机、优先级调度、睡眠唤醒、\verb|fork|、\verb|exec|、\verb|exit|、\verb|wait| 和信号处理等机制；在实现上则面向 RISC-V 重新组织了上下文切换、用户态返回、页表映射和 ELF64 用户程序加载路径。与 \verb|main| 分支的 IA-32/C++ 版本相比，当前实现减少了对 x86 栈帧、TSS、固定进程数组和特定用户程序格式的依赖，把体系结构相关逻辑集中到 RISC-V 上下文结构和少量汇编函数中。
 
-类似地，使用 \verb|\pageref| 命令可以引用页面编号。例如：
-
-\begin{Verbatim}
-请参见第 \pageref{chap:intro} 页。
-\end{Verbatim}
-
-这样，就可以在文档中产生“请参见第 X 页”的效果，其中 X 为标签所在页码的编号。
-
-为了免于手动维护“第 X 章 / 图 X / 表 X”等引用词汇，本模板加载了 \pkg{cleveref} 宏包，并提供 \cs{cref} 命令自动根据标签所指对象的类型生成正确的引用词汇：
-
-\begin{Verbatim}
-请参见\cref{chap:intro}。   % 产出：请参见第 1 章。
-\end{Verbatim}
-
-如需自定义引用词汇，可在导言区声明：
-
-\begin{Verbatim}
-\crefname{对象类型}{引用词汇}{引用词汇复数形式}
-\Crefname{对象类型}{引用词汇}{引用词汇复数形式}
-\end{Verbatim}
-
-例如，可以使用以下代码将“定理”引用词汇修改为“命题”：
-\begin{Verbatim}
-\crefname{theorem}{命题}{命题}
-\Crefname{theorem}{命题}{命题}
-\end{Verbatim}
-
-需要同时引用几个并列的对象时，可以直接使用 \verb|\cref| 命令，例如：
-\begin{Verbatim}
-请参见\cref{chap:introduction,chap:conclusion}。
-请参见\cref{chap:introduction,chap:math,chap:reference,chap:float}。
-请参见\cref{chap:introduction,chap:reference,chap:conclusion}。
-请参见\cref{chap:introduction,chap:reference,chap:conclusion,%
-  algo:algorithm,fig:parallel1,tab:firstone}。
-\end{Verbatim}
-
-引用多个对象时，\pkg{cleveref} 会自动合并连续编号为范围，并按类型分组显示：
-\begin{itemize}
-  \item 请参见\cref{chap:introduction,chap:conclusion}。
-  \item 请参见\cref{chap:introduction,chap:math,chap:reference,chap:float}。
-  \item 请参见\cref{chap:introduction,chap:reference,chap:conclusion}。
-  \item 请参见\cref{chap:introduction,chap:reference,chap:conclusion,%
-        algo:algorithm,fig:parallel1,tab:firstone}。
-\end{itemize}
+从工程实践看，本章对应的重构并不是简单地把 C++ 代码逐行翻译为 Rust，而是在保持教学接口可识别的前提下重新划分了所有权边界。进程对象、文本段引用、内核栈、用户页和中断保护对象都有更明确的生命周期；系统调用、信号和调度则通过 \verb|Result|、枚举和模式匹配表达错误与分支。底层内核仍然需要 \verb|unsafe| 访问用户内存和控制寄存器，但这些代码被限制在上下文切换、ELF 装入和信号恢复等必要位置，为后续阅读、实验和扩展提供了较清晰的基础。
