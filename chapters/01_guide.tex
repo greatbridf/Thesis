@@ -1,100 +1,49 @@
-\chapter{模板使用指南}\label{chap:guide}
+\chapter{绪论}\label{chap:introduction}
 
-本文档是 \TongjiThesis{} 模板的使用示例，基本覆盖了模板的全部排版功能。建议在阅读本示例的同时参考源代码，了解各排版效果的实现方式。在正式撰写毕业设计（论文）时，请删除本章及后续示例章节，替换为实际内容。
+操作系统是连接硬件资源与应用程序的核心系统软件，其设计内容覆盖处理器特权级、地址空间、异常中断、进程调度、文件系统与设备驱动等多个层面。对于计算机科学与技术专业的本科教学而言，操作系统课程既要求学生理解抽象概念，也要求学生能够在真实或接近真实的代码中观察这些概念如何协同工作。仅依靠课堂中的概念讲解，学生往往能够记住进程、页表、系统调用等术语，却难以形成对内核运行过程的整体认识。因而，构建一个代码规模适中、结构清晰、能够实际运行并支持调试修改的教学操作系统，对于操作系统课程实践具有重要意义。
 
-后续示例章节依次演示：\cref{chap:introduction}（标题、列表、字体）、\cref{chap:float}（图、表、算法、代码）、\cref{chap:math}（数字单位、公式、定理）、\cref{chap:reference}（参考文献、脚注、交叉引用）、\cref{chap:conclusion}（总结与展望），附录则示范 \cs{appendixsection}/\cs{appendixsubsection} 的用法。
+本课题以同济大学 Unix V6++ 教学操作系统为基础，围绕其在现代开放指令集平台上的移植与重构展开研究。重构前的 Unix V6++ 面向 IA-32 架构，采用 C++ 语言组织内核模块；本课题在保持其教学系统定位和 Unix V6 风格系统语义的基础上，将内核主体迁移到 RISC-V 平台，并使用 Rust 语言重新组织启动、内存管理、中断异常、进程管理、文件系统、设备驱动与终端交互等核心模块。通过该过程，系统能够在 QEMU virt 机器上运行，并支持用户态 C 程序、Shell 命令、文件读写、进程创建和信号处理等基本功能。
 
-\section{文档类选项}
+\section{研究背景与意义}
 
-在 \verb|main.tex| 的 \verb|\documentclass| 中设置选项。本模板基于 \pkg{ctexbook}，未被识别的选项会自动传递给 \pkg{ctexbook}。
+操作系统课程的难点在于其研究对象并非单个算法或单个程序，而是由硬件机制和软件抽象共同组成的整体系统。进程调度依赖时钟中断，系统调用依赖特权级切换，文件系统依赖块设备和缓冲区管理，用户程序的运行又依赖地址空间和可执行文件装载。各部分之间存在紧密联系，如果缺少能够运行的内核实例，学生很难理解这些机制之间的相互作用。
 
-\begin{table}[htbp]
-  \centering
-  \caption{文档类选项一览}\label{tab:class-options}
-  \renewcommand{\arraystretch}{1.3}
-  \begin{tabular}{llp{10cm}}
-    \toprule
-    \textbf{选项} & \textbf{默认值} & \textbf{说明} \\
-    \midrule
-    \texttt{oneside / twoside} & \texttt{oneside} & 单面或双面排版。双面模式下章节从奇数页开始，装订线自动左右交替。 \\
-    \texttt{degree} & \texttt{bachelor} & 学位类型，目前支持 \texttt{bachelor}（学士）。 \\
-    \texttt{field} & \texttt{science} & 专业类别。\texttt{science}：理工科（工科/理科），章节编号采用阿拉伯数字体系；\texttt{humanities}：文科（经管/人文/法学/外语/艺术），章节编号采用汉字体系，详见\cref{tab:heading-levels}。 \\
-    \texttt{fontset} & \texttt{fandol} & 字体集。\texttt{fandol}（跨平台，默认）、\texttt{windows}、\texttt{founder}、\texttt{adobe}。详见 \verb|style/font/| 目录下的字体定义文件。 \\
-    \texttt{times} & \texttt{false} & \texttt{true}：通过 \pkg{fontspec} 调用系统 Times New Roman 字体；\texttt{false}：使用 \pkg{newtx} 宏包提供的 \TeX{} 原生 Times 风格字体。两者视觉效果相近。 \\
-    \texttt{fullwidthstop} & \texttt{circle} & 句号样式：\texttt{circle}（默认，保留“。”）或 \texttt{dot}（替换为“．”全角句点）。 \\
-    \texttt{minted} & \texttt{true} & 代码高亮方案。\texttt{true} 使用 \pkg{minted}（需安装 Python 和 Pygments），\texttt{false} 回退至 \pkg{listings}。 \\
-    \texttt{biblatex} & \texttt{true} & 参考文献方案。\texttt{true} 使用 \BibLaTeX{} + \texttt{biber}（功能更丰富），\texttt{false} 使用 \BibTeX{} + \pkg{gbt7714}（编译更快）。 \\
-    \bottomrule
-  \end{tabular}
-\end{table}
+经典教材通常从概念层面对操作系统进行系统论述，例如进程管理、内存管理、文件系统、输入输出和安全机制等内容\cite{tanenbaum2017modern,arpaci2019ostep}。这些教材为理解操作系统原理提供了必要框架，但对于本科阶段的系统实践而言，还需要一个规模可控、便于阅读和修改的内核作为实验对象。Unix V6 及其教学化衍生系统正是基于这一需求而长期被采用：它们功能相对完整，又不像现代通用操作系统那样庞大复杂，适合作为理解内核内部结构的切入点。
 
-\section{填写论文信息}
+同济大学 Unix V6++ 是面向操作系统教学开发的 Unix V6 风格实验系统。该系统将早期 Unix 的核心思想迁移到更容易获得的硬件平台，并使用面向对象方式重构了进程、文件系统、设备和中断等模块。其教学价值在于保留了 Unix 系统“麻雀虽小，五脏俱全”的特点：学生可以通过阅读和修改系统代码，观察系统调用如何进入内核、进程如何被调度、文件如何通过 inode 和缓冲区访问磁盘，以及终端输入如何驱动 Shell 交互。陈闳中教授关于 Unix V6++ 教学实践的回顾也强调了“让学生真正动手修改、调试内核”的课程目标\cite{chenhz_unixv6pp}。
 
-论文的封面、信息说明页与中英文摘要的个人信息分散在 \verb|chapters/| 目录下的两个文件中。各文件均已提供带注释的示例，照搬并替换字段值即可；模板据此自动生成对应页面。
+近年来，RISC-V 开源指令集架构在教学、科研与产业中得到快速发展。RISC-V 架构具有开放、简洁、模块化和可扩展等特点，其特权架构规范对异常、中断、页表和特权级切换等操作系统所需机制进行了明确描述\cite{riscv_privileged_20211203}。与传统封闭指令集相比，RISC-V 更适合作为系统软件教学中的硬件抽象基础：学生既可以学习指令集和特权级机制，也可以进一步理解操作系统如何利用这些机制实现地址隔离、异常处理和设备访问。
 
-\begin{itemize}
-  \item \textbf{封面与信息说明页} —— \verb|chapters/metadata.tex|：\cs{school}、\cs{major}、\cs{student}、\cs{thesistitle}、\cs{thesistitleeng}、\cs{thesisadvisor}、\cs{thesisdate}（封面），以及 \cs{infotype}（\texttt{thesis}、\texttt{design} 或 \texttt{engineering}）、\cs{infoabstract}、\cs{infothesiswords}（论文）或 \cs{infodrawings}+\cs{infowordcount}（设计）、\cs{infomaterials}（信息说明页）。封面与信息说明页由随后的 \cs{MakeCover}、\cs{MakeInfoPage} 命令自动生成。
-  \item \textbf{中英文摘要} —— \verb|chapters/00_abstract.tex|：\cs{MakeAbstract}\verb|{正文}{关键词}| 与 \cs{MakeAbstractEng}\verb|{Text}{Keywords}|。
-\end{itemize}
+在此背景下，将 Unix V6++ 移植到 RISC-V 平台具有两方面意义。其一，从教学角度看，该工作能够将 Unix V6++ 原有的教学体系与 RISC-V 开放生态结合起来，使课程实验平台更贴近当前系统软件教学趋势。其二，从工程实践角度看，跨体系结构移植要求重新审视启动流程、内存布局、中断控制器、块设备、用户程序 ABI 和构建系统等细节，有助于形成对操作系统底层实现的整体认识。
 
-\section{文档结构}
+\section{国内外研究现状}
 
-\verb|main.tex| 已预置了完整的论文结构，用户只需修改各 \verb|\input| 文件的内容：
+教学操作系统的设计目标通常不是追求工业级完备性，而是在有限代码规模内覆盖操作系统的核心机制。Unix V6 是这一方向的重要源头。它以简洁的代码实现了进程、文件、目录、设备和系统调用等基本机制，长期被用作理解 Unix 操作系统结构的经典材料。以 Unix V6 为思想来源的教学系统强调可读性和可修改性，适合用来展示操作系统各模块之间的配合关系。
 
-\begin{table}[htbp]
-  \centering
-  \caption{文档结构一览}\label{tab:doc-structure}
-  \renewcommand{\arraystretch}{1.3}
-  \begin{tabular}{llp{7.5cm}}
-    \toprule
-    \textbf{结构} & \textbf{命令} & \textbf{说明} \\
-    \midrule
-    封面       & \verb|\MakeCover|      & 由 \verb|metadata.tex| 中的信息自动生成 \\
-    信息说明页 & \verb|\MakeInfoPage|   & 由 \verb|metadata.tex| 中的信息自动生成 \\
-    前置部分   & \verb|\frontmatter|    & 页码切换为大写罗马数字（I, II, III\ldots） \\
-    摘要     & \verb|\MakeAbstract|     & 中英文摘要及关键词（\verb|00_abstract.tex|） \\
-    目录     & \verb|\tableofcontents|  & 自动生成；可取消注释 \verb|\listoffigures|、\verb|\listoftables| \\
-    正文     & \verb|\mainmatter|       & 页码切换为阿拉伯数字，从1重新开始 \\
-    参考文献 & \verb|\makereferences|   & 自动排版，格式符合 GB/T 7714 \\
-    附录     & \verb|\appendix|         & 新增「附录」章页，节编号为 A、B、C（\verb|appendix.tex|） \\
-    谢辞     & \verb|\backmatter|       & 取消章编号，页码继续（\verb|ack.tex|） \\
-    \bottomrule
-  \end{tabular}
-\end{table}
+MIT 的 xv6 是当前国际上应用较广的 Unix-like 教学操作系统。xv6 早期版本面向 x86，后续版本迁移到 RISC-V，并在 MIT 操作系统课程中用于讲解进程、页表、锁、文件系统和系统调用等主题\cite{xv6_book_2023}。xv6 的特点是代码量较小、结构清晰、注释和实验材料完备，因此成为许多高校操作系统课程的重要参考。不过，xv6 更强调从 Unix V6 思想出发重写一个小型教学内核，而 Unix V6++ 则更突出在本校课程体系中长期积累的教学接口、实验习惯和用户态环境。
 
-正文各章放在 \verb|chapters/| 下，通过 \verb|main.tex| 中的 \verb|\input{chapters/XX_name}| 注册；参考文献数据库文件在导言区通过 \verb|\tjbibresource{bib/note.bib}| 指定，支持逗号分隔的多个文件。
+除 xv6 外，OS/161、Pintos 等系统也被广泛用于操作系统教学。OS/161 常用于配合同步、虚拟内存和文件系统实验，Pintos 则强调从半成品内核出发逐步完成调度、用户程序和文件系统等功能。这类系统能够训练学生的内核编程能力，但其设计背景、运行环境和实验组织方式各不相同。对于本课题而言，更重要的是在已有 Unix V6++ 教学基础上完成平台迁移，而不是重新选择一个全新的教学内核。
 
-\section{常用命令速查}
+国内在 RISC-V 操作系统教学方面也形成了较丰富的实践。rCore 教程以 Rust 语言和 RISC-V 架构为基础，从批处理系统、地址空间、进程管理到文件系统逐步构造操作系统内核\cite{rcore_tutorial_v3}。该项目说明了 Rust 与 RISC-V 结合用于系统软件教学的可行性，也展示了借助类型系统和模块化组织改善内核代码可维护性的思路。与此同时，QEMU 为 RISC-V 提供了稳定的系统级仿真环境，能够模拟 virt 机器、串口、PLIC、VirtIO 设备等硬件组件，降低了教学实验对真实硬件的依赖\cite{qemu_riscv_doc}。
 
-\tabref{tab:template-commands}列出了本模板提供的常用命令，具体用法在后续各章中演示。
+Rust 语言近年来也逐渐进入系统软件开发领域。Rust 通过所有权、生命周期和类型检查等机制，在不依赖垃圾回收的前提下提供内存安全能力\cite{rust_reference}。内核开发仍然需要处理裸机启动、外设访问、页表修改和上下文切换等底层操作，无法完全避免 unsafe 代码，但 Rust 的模块系统、枚举、模式匹配和 trait 等语言机制有助于表达复杂状态和抽象边界。对于教学内核而言，Rust 既能保留接近硬件的控制能力，也能在一定程度上降低空指针、悬垂引用和资源释放错误带来的理解负担。
 
-\begin{table}[htbp]
-  \centering
-  \caption{模板常用命令}\label{tab:template-commands}
-  \renewcommand{\arraystretch}{1.3}
-  \begin{tabular}{lp{9cm}}
-    \toprule
-    \textbf{命令} & \textbf{用途} \\
-    \midrule
-    \multicolumn{2}{l}{\textbf{交叉引用}} \\
-    \verb|\cref{label}|           & 智能引用，自动生成“第~X~章”“图~X”“式~(X)”等 \\
-    \verb|\chapref{label}|        & 引用章：第~X~章 \\
-    \verb|\secref{label}|         & 引用节：第~X~节 \\
-    \verb|\figref{label}|         & 引用图：图~X \\
-    \verb|\tabref{label}|         & 引用表：表~X \\
-    \verb|\eqref{label}|          & 引用公式：式~(X) \\
-    \midrule
-    \multicolumn{2}{l}{\textbf{参考文献}} \\
-    \verb|\tjbibresource{file}|   & 导言区指定 \texttt{.bib} 文件 \\
-    \verb|\makereferences|        & 输出参考文献列表 \\
-    \verb|\cite{key}|             & 上标引用 \\
-    \midrule
-    \multicolumn{2}{l}{\textbf{排版辅助}} \\
-    \verb|\pkg{name}|             & 排版宏包名称（带 CTAN 链接） \\
-    \verb|\cs{name}|              & 排版命令名称（如 \cs{section}） \\
-    \verb|\Circled{n}|            & 带圈数字：\Circled{1} \Circled{2} \Circled{3} \\
-    \verb|\TongjiThesis|            & 项目 Logo：\TongjiThesis \\
-    \verb|\dd|, \verb|\ee|, \verb|\ii|, \verb|\jj| & 直立体微分 $\dd$、自然对数底 $\ee$、虚数单位 $\ii$、$\jj$ \\
-    \bottomrule
-  \end{tabular}
-\end{table}
+综上，现有教学系统已经从不同角度证明了小型内核在操作系统课程中的价值，RISC-V 与 Rust 也为新一代教学操作系统提供了新的技术基础。然而，如何在保留 Unix V6++ 原有教学语义的同时，将其从 IA-32/C++ 环境迁移到 RISC-V/Rust 环境，仍然需要解决体系结构差异、内存模型差异、设备模型差异和用户态 ABI 适配等一系列具体问题。本课题正是在这一问题背景下展开。
+
+\section{本文主要研究内容}
+
+本文围绕 Unix V6++ 的 RISC-V 移植与 Rust 重构展开，主要研究内容包括以下四个方面。
+
+第一，完成系统启动与内存管理机制的迁移。重构后的内核运行于 QEMU virt 平台，通过 OpenSBI 进入 Rust 内核入口，完成 BSS 段清零、串口初始化、页表建立和内核初始化。内存管理部分基于 RISC-V Sv39 分页机制，设计内核地址空间、用户地址空间和 MMIO 映射区域，并通过 \texttt{satp} 寄存器启用页表保护。物理页管理方面，系统划分内核页和用户页区域，并接入页帧分配器支持内核对象、用户进程地址空间和内核栈的分配。
+
+第二，完成中断、异常和系统调用框架的重构。RISC-V 平台不再使用 IA-32 的 GDT、IDT、8259A 等机制，而是依赖 \texttt{stvec}、\texttt{scause}、\texttt{sepc}、\texttt{sstatus} 等特权寄存器完成 Trap 处理。本文实现了统一 Trap 入口，在汇编层保存通用寄存器和关键控制状态，并在 Rust 层分发系统调用、时钟中断、外部中断和异常。系统调用接口保留 Unix V6 风格编号和语义，由用户态 C 库封装 \texttt{ecall} 指令进入内核，内核再根据系统调用号分发到文件系统、进程管理和终端等模块。
+
+第三，完成进程管理和用户程序支持。重构后的系统实现了进程控制块、进程状态机、独立内核栈、任务上下文切换、sleep/wakeup 和调度逻辑。用户程序采用 ELF64/RISC-V 格式，内核在 \texttt{exec} 过程中解析 ELF 头和程序头，将 text、data 和 stack 区域映射到用户空间，并构造 argc/argv 用户栈。系统实现了 \texttt{fork}、\texttt{exec}、\texttt{wait}、\texttt{exit} 等核心进程系统调用，同时支持基本信号机制，使终端中断、非法访问和用户发送信号能够作用于运行中的进程。
+
+第四，完成文件系统、块设备和交互环境的适配。文件系统部分保留 Unix V6++ 的 inode、目录项、超级块、文件打开表和缓冲区管理等核心抽象，并将相关实现迁移到 Rust 模块中。设备层由原先面向 PC 平台的设备模型调整为 QEMU virt 平台上的 MMIO 和 VirtIO 设备，块设备通过 VirtIO Block 驱动访问文件系统镜像。终端部分基于串口和 PLIC 外部中断实现输入输出、回显和控制字符处理，并支持 Shell 命令执行、管道和重定向等交互功能。
+
+与重构前的 main 分支相比，当前系统的主要变化体现在三个层面：体系结构层面，从 IA-32 平台迁移到 RISC-V 平台；实现语言层面，从 C++ 内核主体迁移到 Rust 内核主体；运行环境层面，从传统 PC 设备模型调整到 QEMU virt、OpenSBI、PLIC、UART 和 VirtIO 组成的仿真平台。本文后续章节将围绕这些变化展开具体设计与实现分析。
+
+\section{本文组织结构}
+
+本文共分为八章。第 1 章为绪论，介绍课题背景、研究意义、相关教学操作系统发展现状以及本文主要研究内容。第 2 章分析原 Unix V6++ 系统结构与重构目标，说明当前系统相对 main 分支的总体变化。第 3 章介绍 RISC-V 启动流程、地址空间设计、Sv39 页表和物理内存管理实现。第 4 章介绍 Trap 框架、中断异常处理和系统调用机制。第 5 章介绍进程模型、调度、核心进程系统调用、ELF 用户程序加载和信号机制。第 6 章介绍 Unix V6 文件系统适配、VirtIO 块设备、缓冲区管理、TTY 和 Shell 交互环境。第 7 章介绍系统构建、QEMU 运行环境和功能测试结果。第 8 章总结全文工作，分析当前实现的不足，并展望后续可改进方向。
