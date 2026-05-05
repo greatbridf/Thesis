@@ -20,7 +20,7 @@
 
 \section{块设备与缓冲区接口}
 
-原 IA-32/C++ 版本运行于 PC 机器模型，块设备主要面向 ATA/IDE 硬盘，驱动代码需要直接操作 I/O 端口、LBA28 寄存器、DMA 描述符和 8259A 中断结束命令。当前 RISC-V/Rust 版本面向 QEMU virt 机器，块设备改为 VirtIO MMIO 设备。内核通过 \verb|VirtIOBlockDriver::find_block_device| 扫描 virt 机器提供的 MMIO slot，识别现代 VirtIO Block 设备后建立驱动对象；读写请求通过 \verb|virtio-drivers| 库提交给设备，并以 512 字节扇区为单位访问磁盘镜像\cite{qemu_riscv_doc}。
+原 IA-32/C++ 版本运行于 PC 机器模型，块设备主要面向 ATA/IDE 硬盘，驱动代码需要直接操作 I/O 端口、LBA28 寄存器、DMA 描述符和 8259A 中断结束命令。当前 RISC-V/Rust 版本面向 QEMU virt 机器，块设备改为 VirtIO MMIO 设备。内核通过 \verb|VirtIOBlockDriver::find_block_device| 扫描 virt 机器提供的 MMIO slot，识别现代 VirtIO Block 设备后建立驱动对象；读写请求通过 \verb|virtio-drivers| 库提交给设备，并以 512 字节扇区为单位访问磁盘镜像\cite{qemu_riscv_doc,virtio_1_2}。
 
 当前系统仍保留 Unix V6++ 风格的块设备接口。\verb|BlockDevice| trait 提供 \verb|open|、\verb|close|、\verb|strategy|、\verb|start| 和 \verb|devtab| 方法，\verb|VirtIOBlockDevice| 实现该接口，并维护设备队列与活动标志。Buffer 管理器作为文件系统和块设备之间的缓冲层，负责按设备号和块号取得 \verb|Buf|，处理忙等待、延迟写、I/O 完成唤醒等流程。由于这一部分并非本文重点，本节不进一步讨论缓存命中、空闲链表和写回策略，只说明它为文件系统提供了统一的块读写入口。
 
