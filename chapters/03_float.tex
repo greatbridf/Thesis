@@ -93,19 +93,7 @@ Rust 在页表实现中的作用主要体现在两个方面。其一，页表项
 
 \begin{figure}[htbp]
   \centering
-  \fbox{%
-    \begin{minipage}{0.92\textwidth}
-      \centering
-      \begin{tabular}{p{0.42\textwidth}p{0.42\textwidth}}
-        \textbf{原 C++ 管理路径} & \textbf{Rust 重构后管理路径} \\
-        \midrule
-        \verb|AllocMemory(size)| 返回起始地址 & \verb|KernelPages::alloc(order)| 返回拥有者对象 \\
-        调用方保存地址与长度 & 对象内部持有 \verb|PhysPage| 句柄 \\
-        调用方在合适位置调用 \verb|FreeMemory| & 生命周期结束时触发 \verb|Drop| \\
-        空闲块表插入并合并空闲区间 & Buddy 分配器回收对应页帧 \\
-      \end{tabular}
-    \end{minipage}
-  }
+  \includegraphics[width=0.95\textwidth]{figures/mm-lifetime.pdf}
   \caption{页资源生命周期管理方式对比}\label{fig:mm-lifetime}
 \end{figure}
 
