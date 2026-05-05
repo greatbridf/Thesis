@@ -1,19 +1,49 @@
-\chapter{总结与展望}\label{chap:conclusion}
+\chapter{文件系统、设备与交互环境}\label{chap:fs-device-shell}
 
-\section{总结}
+文件系统、块设备、字符设备和 Shell 共同构成了用户能够直接观察到的系统环境。用户在终端输入命令后，字符设备和 TTY 层负责接收输入，Shell 解析命令并通过系统调用访问文件、创建进程或建立管道；文件读写最终通过文件系统、缓冲区和块设备到达磁盘镜像。本章只从系统集成角度说明文件系统和 Buffer 管理在当前系统中的接口作用，不展开 inode 分配、目录项维护、缓冲区替换等细节；重点放在 RISC-V/QEMU 平台下设备模型的变化，以及 TTY 和 Shell 如何与前文的系统调用、进程管理机制连接。
 
-总结部分应回顾研究的主要工作和成果，概括本文的核心贡献，建议按研究目标逐条归纳主要结论。例如：
+\section{Unix V6 文件系统适配}
 
-\begin{enumerate}
-    \item 本文研究了……问题，提出了……方法，并通过实验验证了其有效性。
-    \item 在……方面，本文改进了……，相比已有方法在……指标上提升了……。
-\end{enumerate}
+当前系统保留了 Unix V6++ 的文件系统接口和主要用户态语义，包括超级块、inode、目录项、打开文件表、当前工作目录以及 \verb|open|、\verb|read|、\verb|write|、\verb|creat|、\verb|link|、\verb|unlink|、\verb|chdir|、\verb|stat|、\verb|dup| 和 \verb|pipe| 等系统调用。内核启动阶段在 \verb|load_file_system| 中读取根设备上的超级块，在 \verb|init_root_directory| 中取得根目录 inode，并为 0 号进程的 \verb|Userspace| 设置当前目录。随后，系统通过 \verb|kernel_open| 打开 \verb|/dev/tty1|，把文件描述符 0 和 1 绑定到控制台输入输出，为后续 Shell 交互建立基本环境。
 
-\section{展望}
+与原 \verb|main| 分支相比，文件系统的外部行为尽量保持稳定，但资源引用方式更偏向 Rust 的所有权模型。当前代码使用 \verb|InodeRef|、\verb|FileRef|、\verb|InodeRefGuard| 等类型封装 inode 和文件对象的引用关系，克隆引用时增加表项计数，离开作用域时通过 \verb|Drop| 归还引用。原 C++ 版本通常在调用路径中显式执行 \verb|IGet|、\verb|IPut|、\verb|CloseF| 等操作；当前版本仍保留这些 Unix 风格的表结构概念，但把一部分成对操作收束到引用类型的生命周期中。这样并不改变教学上对文件表和 inode 表的理解，却减少了调用者忘记释放引用的机会。
 
-展望部分应针对研究中尚未解决的问题，提出后续研究的方向和建议。例如：
+本章不展开文件系统内部算法，只强调它在整机运行中的位置：进程管理模块依赖文件系统查找并读取 ELF 可执行文件，Shell 依赖目录和普通文件接口完成命令查找，管道与重定向依赖文件描述符复制和读写语义，块设备驱动则为根文件系统镜像提供持久化后端。也就是说，文件系统在本文中主要作为用户程序运行环境的组成部分出现，而不是作为单独的设计重点。
 
-\begin{enumerate}
-    \item 本文方法在……场景下存在局限性，未来可通过……加以改进。
-    \item 后续工作可考虑引入……方法，以提升……方面的性能。
-\end{enumerate}
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.95\textwidth]{figures/fs-device-path.pdf}
+  \caption{文件、设备与系统调用的集成路径}\label{fig:fs-device-path}
+\end{figure}
+
+\figref{fig:fs-device-path} 展示了当前系统中普通文件和设备文件的两类访问路径。用户程序通过 C 库发起系统调用，内核在系统调用层分发到 \verb|FileManager|。如果目标是普通文件，则访问路径经过 inode、文件系统和 Buffer 管理，再由块设备驱动读写磁盘镜像；如果目标是字符设备，例如 \verb|/dev/tty1|，则通过设备号分发到 Console 字符设备，再进入 TTY 层。这样的分层延续了 Unix “一切皆文件”的接口习惯，也使 Shell 无需直接区分终端、普通文件和管道的底层实现。
+
+\section{块设备与缓冲区接口}
+
+原 IA-32/C++ 版本运行在 PC 机器模型上，块设备主要面向 ATA/IDE 硬盘，驱动代码需要直接操作 I/O 端口、LBA28 寄存器、DMA 描述符和 8259A 中断结束命令。当前 RISC-V/Rust 版本面向 QEMU virt 机器，块设备改为 VirtIO MMIO 设备。内核在 \verb|VirtIOBlockDriver::find_block_device| 中扫描 virt 机器提供的 MMIO slot，识别现代 VirtIO Block 设备后建立驱动对象；读写请求通过 \verb|virtio-drivers| 库提交给设备，并以 512 字节扇区为单位访问磁盘镜像\cite{qemu_riscv_doc}。
+
+当前系统仍保留了 Unix V6++ 风格的块设备接口。\verb|BlockDevice| trait 提供 \verb|open|、\verb|close|、\verb|strategy|、\verb|start| 和 \verb|devtab| 方法，\verb|VirtIOBlockDevice| 实现该接口，并维护设备队列与活动标志。Buffer 管理器作为文件系统和块设备之间的缓冲层，负责按设备号和块号取得 \verb|Buf|，处理忙等待、延迟写、I/O 完成唤醒等流程。由于这一部分并非本文重点，本节不进一步讨论缓存命中、空闲链表和写回策略，只说明它为文件系统提供了统一的块读写入口。
+
+RISC-V 版本的设备适配还体现了较明显的平台迁移。旧版本依赖 x86 I/O 端口和中断控制器，设备访问与 PC 硬件细节耦合较深；当前版本使用 MMIO 地址、PLIC 外部中断和 VirtIO 标准设备，驱动路径与 QEMU virt 平台一致。VirtIO HAL 中仍需要处理 DMA 页分配、物理地址转换和共享缓冲区等底层问题，但这些内容被限制在驱动适配层中。上层文件系统仍通过 \verb|bread|、\verb|bwrite|、\verb|bdwrite| 等缓冲区接口访问块数据，不必感知磁盘后端已经从 ATA 变为 VirtIO。
+
+\section{TTY 与 Shell}
+
+字符设备是 Shell 交互的入口。当前系统用 \verb|ConsoleDevice| 实现主设备号为 0 的字符设备，并通过 \verb|console_tty| 连接到 TTY 层。读终端时，字符设备首先检查 TTY 输入队列是否已有完整数据；如果没有，当前进程睡眠在 TTY 的读等待通道上。串口接收到输入字节后，UART 外部中断经 PLIC 进入内核，Trap 处理器读取串口数据并调用 \verb|tty_input_byte|，TTY 层完成回显、规范模式处理、退格、整行提交和读者唤醒。写终端时，输出字符经过 TTY 的输出转换，例如把换行转换为回车加换行，最终写入串口。
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.95\textwidth]{figures/tty-shell-flow.pdf}
+  \caption{终端输入到 Shell 执行的交互路径}\label{fig:tty-shell-flow}
+\end{figure}
+
+\figref{fig:tty-shell-flow} 展示了从输入字节到命令执行的路径。TTY 默认工作在规范输入模式，用户输入一行并按下回车后，等待在 \verb|read| 上的 Shell 被唤醒。Shell 的 \verb|main1| 输出提示符，调用 \verb|gets| 读取命令行，再通过 \verb|SpiltCommand| 和 \verb|AnalizeCommand| 构造命令树。对于内建命令 \verb|cd|，Shell 直接调用 \verb|chdir| 并更新当前路径；对于普通命令，Shell 先 \verb|fork|，子进程进行必要的输入输出重定向或管道描述符复制，再尝试执行当前路径下的程序，失败后继续尝试 \verb|/bin| 目录下的同名程序。
+
+当前 Shell 沿用了原 Unix V6++ 用户态 Shell 的主要结构，支持常见命令执行、管道、重定向、后台执行标志以及 \verb|shutdown|。重构并没有把 Shell 改写为 Rust 程序，而是保留 C 用户程序和轻量 C 库，这对于教学系统有一定意义：内核以 Rust 实现，用户态仍使用 C 编写，学生可以同时观察内核 ABI、C 运行时入口和系统调用封装之间的关系。用户程序通过 \verb|ecall| 进入内核，内核通过 RISC-V 的 \verb|a0|、\verb|a1| 等寄存器传递返回值和参数，这与第 4 章的系统调用路径形成闭环。
+
+TTY 层也和信号机制相连接。当输入字符等于中断、退出或挂起控制字符时，TTY 会根据 \verb|Termios| 配置回显控制字符，并通过进程管理器向相关进程发送 \verb|SIGINT|、\verb|SIGQUIT| 或 \verb|SIGTSTP|。这使用户可以在终端中观察信号递送效果，也为第 7 章中的信号测试提供了交互入口。原 C++ 版本的 TTY 直接面向键盘和显示输出路径，当前版本则把输入输出收束到 UART 串口和 Console 字符设备，更符合 QEMU virt 的无图形运行方式。
+
+\section{本章小结}
+
+本章从系统集成角度说明了文件系统、设备和交互环境在当前 RISC-V/Rust 版本 Unix V6++ 中的作用。文件系统继续提供 Unix V6 风格的目录、inode、打开文件和文件描述符语义；Buffer 管理和块设备层为根文件系统镜像提供读写支撑，但本文只概述其接口关系。设备适配方面，系统由原 IA-32/PC 平台的 ATA、I/O 端口和键盘显示路径，迁移到 RISC-V/QEMU virt 平台的 VirtIO Block、PLIC、UART 和 Console 字符设备。Shell 则保留 C 用户态实现，通过系统调用、进程管理、文件描述符、管道和信号机制与内核形成完整交互链路。
+
+从重构效果看，本章涉及的工作主要体现在平台边界的重新划分：Rust 内核用 trait 和引用类型表达块设备、字符设备和文件对象的接口关系，用生命周期管理部分引用释放逻辑；同时保留用户态 C Shell 和 Unix 风格文件接口，避免因语言重写而改变教学系统的使用方式。这样既完成了面向 RISC-V/QEMU 的设备迁移，也为后续系统验证提供了可直接操作的命令行环境。
