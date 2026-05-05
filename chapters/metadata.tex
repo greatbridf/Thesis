@@ -12,8 +12,8 @@
 \school{计算机科学与技术学院}
 \major{计算机科学与技术}
 \student{2654321}{张同舟}
-\thesistitle{\TongjiThesis{}同济大学本科毕业设计（论文）模板与\LaTeX{}排版技术应用}{模板排版功能示例、学术写作规范与格式设置指南}
-\thesistitleeng{\TongjiThesis{} Template and \LaTeX{} Typesetting for Tongji University Undergraduate Thesis}{A Guide to Typesetting Features, Academic Writing Standards, and Formatting}
+\thesistitle{\TongjiThesis{}基于 RISC-V 与 Rust 的 Unix V6++ 教学操作系统移植与重构}{}
+\thesistitleeng{\TongjiThesis{}Porting and Refactoring the Unix V6++ Educational Operating System with RISC-V and Rust}{}
 \thesisadvisor{李共济\quad 教授}
 \thesisdate{\the\year}{\the\month}{\the\day} % 使用当前日期; 也可以自定义日期
 
@@ -29,7 +29,7 @@
 
 % 内容简述（请用300字以内简要概述）
 \infoabstract{%
-请在此处填写论文内容简述，字数建议不超过300字。内容简述应概括论文的研究背景与问题动机、研究目标、主要方法与技术路线、实验设计与数据来源、关键实验结果及性能指标，以及研究结论与创新点，使读者能够快速了解本论文的核心贡献与研究意义。建议按照以下结构来组织简述内容：首先介绍研究背景与问题动机，充分说明研究的必要性与现有相关工作的主要不足之处；其次阐述所提出的方法或技术方案及其设计原理与主要实现细节；然后给出在典型数据集或实际应用场景下的主要实验结果与量化评价指标的全面横向对比分析；最后总结本研究的主要结论与当前局限性，并展望未来改进方向与潜在应用前景。请将以上示例文字全部替换为您的实际内容简述。
+本文研究 Unix V6++ 教学操作系统面向 RISC-V 平台的移植与 Rust 重构。重构前系统以 IA-32/C++/PC 设备模型为基础，当前系统改为运行于 QEMU virt 与 OpenSBI 环境，内核主体采用 Rust 实现，用户态 C 程序交叉编译为 ELF64/RISC-V 可执行文件。论文围绕启动、Sv39 地址空间、Trap、系统调用、进程管理、ELF 加载、信号、VirtIO 块设备、UART/TTY 和 Shell 交互展开，文件系统和内存管理主要作为运行支撑条件处理。系统已形成从构建、镜像生成到 QEMU 交互测试的闭环，并保留 Unix V6++ 的主要教学语义。
 }
 
 % 毕业设计：图纸数量与正文字数（成果类型为 design 或 engineering 时填写，两者须同时填写）
@@ -41,6 +41,7 @@
 
 % 随附资料（每条用 \item 开头；不填则显示空白行）
 \infomaterials{
-  \item 随附材料名称一（如：全套图纸、程序源代码、计算书等）；
-  \item 随附材料名称二
+  \item 程序源代码；
+  \item 构建脚本与测试用用户程序；
+  \item 论文插图源文件。
 }
