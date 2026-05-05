@@ -1,0 +1,70 @@
+\chapter{系统构建与测试验证}\label{chap:build-validation}
+
+系统移植是否完成，最终需要通过可重复的构建流程和可观察的运行结果来确认。当前系统不仅要能够编译 Rust 内核，还要能够交叉编译 C 用户库、Shell 和用户程序，生成包含内核、用户程序和文件系统内容的磁盘镜像，并在 QEMU RISC-V virt 机器上启动到可交互 Shell。本章介绍当前系统的构建与运行环境、功能测试范围和结果分析，并结合 \verb|main| 分支说明重构后验证对象的变化。
+
+\section{构建与运行环境}
+
+当前仓库采用 Makefile 组织整体构建，用 Cargo 构建 Rust 内核，用 RISC-V 交叉 GCC 构建用户态 C 程序。内核部分在 \verb|src/Makefile| 中调用 \verb|cargo +nightly-2026-04-07 rustc|，目标三元组为 \verb|riscv64gc-unknown-none-elf|，并使用 \verb|-Z build-std=core,alloc,compiler_builtins| 构建裸机所需的标准库子集。Cargo 输出静态库后，Makefile 再用 \verb|rust-lld| 和 \verb|src/kernel-riscv64.ld| 链接生成 \verb|src/kernel.elf|。这种流程与普通用户态 Rust 程序不同，原因在于内核运行在无标准库、无操作系统服务的环境中，只能使用 \verb|core|、\verb|alloc| 和明确接入的底层库。
+
+用户态部分仍由 C 语言实现。用户库 \verb|lib/libv6pptongji.a|、Shell 的 \verb|Shell.exe| 以及 \verb|programs| 目录下的 \verb|ls|、\verb|cat|、\verb|echo|、\verb|cp|、\verb|rm|、\verb|mkdir|、\verb|fork|、\verb|sig| 等程序都通过 \verb|riscv64-unknown-elf-gcc| 编译，并使用 \verb|-march=rv64gc|、\verb|-mabi=lp64d|、\verb|-ffreestanding|、\verb|-nostdlib| 等选项生成独立的 RISC-V ELF64 可执行文件。链接时指定 \verb|-Ttext-segment=0x400000| 和入口 \verb|_start|，与第 5 章中的 ELF 加载地址和用户态 C 运行时入口相对应。
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.95\textwidth]{figures/build-pipeline.pdf}
+  \caption{内核、用户程序与磁盘镜像构建流程}\label{fig:build-pipeline}
+\end{figure}
+
+\figref{fig:build-pipeline} 展示了当前构建流程。顶层 \verb|make all| 会依次构建工具、用户库、Shell、用户程序和内核，并将构建产物复制到 \verb|target/img-workspace|。随后，\verb|tools/filescanner| 扫描工作目录内容，\verb|tools/fs-editor| 生成 \verb|target/disk.img|。运行 RISC-V 目标时，\verb|make qemu-riscv64| 使用 \verb|qemu-system-riscv64|、\verb|-machine virt|、\verb|-bios default|、\verb|-nographic| 和 \verb|-kernel src/kernel.elf| 启动内核，同时通过 VirtIO MMIO 设备挂载 \verb|target/disk.img| 作为块设备后端\cite{qemu_riscv_doc}。
+
+与 \verb|main| 分支相比，构建和运行对象发生了三类变化。第一，原版本主要通过 CMake/Ninja 构建 C++ 内核，通过 \verb|qemu-system-i386| 和 IDE 磁盘启动；当前版本增加了 Rust 内核构建链和 RISC-V 运行目标。第二，原用户态程序主要面向 IA-32/PE 或 32 位环境，当前用户态程序统一交叉编译为 ELF64/RISC-V。第三，原系统运行依赖 PC 机器模型中的 BIOS、ATA 和传统中断设备；当前 RISC-V 目标通过 OpenSBI、QEMU virt、PLIC、UART 和 VirtIO Block 完成启动与设备访问。顶层 Makefile 仍保留 \verb|qemu|、\verb|qemug| 等旧目标，便于对比重构前后的平台差异；实际验证当前系统时，重点使用 \verb|qemu-riscv64| 和 \verb|qemu-riscv64g|。
+
+\begin{table}[htbp]
+  \centering
+  \caption{主要构建与运行目标}\label{tab:build-targets}
+  \begin{tabular}{p{0.25\textwidth}p{0.62\textwidth}}
+    \toprule
+    目标或产物 & 作用 \\
+    \midrule
+    \verb|src/kernel.elf| & RISC-V/Rust 内核 ELF 文件，由 Cargo 静态库和链接脚本生成 \\
+    \verb|target/disk.img| & 包含 Shell、用户程序、设备节点和文件系统内容的磁盘镜像 \\
+    \verb|make qemu-riscv64| & 在 QEMU virt 机器上启动当前 RISC-V 系统 \\
+    \verb|make qemu-riscv64g| & 以 GDB stub 方式启动，便于远程调试内核 \\
+    \verb|make check| & 对 Rust 内核执行交叉目标下的类型检查 \\
+    \verb|make qemu| & 保留的 IA-32/QEMU 运行目标，用于对照原平台路径 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section{功能测试}
+
+当前系统的验证以 QEMU 中的交互测试为主，辅以构建目标和启动日志检查。启动阶段首先观察内核是否能通过 OpenSBI 进入 Rust 入口，完成 BSS 清零、页表初始化、串口初始化、物理内存管理初始化、0 号进程创建、Trap 初始化、Buffer 初始化、PLIC 与定时器初始化、文件系统超级块读取、根目录设置和控制台打开。若这些步骤成功，内核会创建 init 进程并执行 \verb|/Shell.exe|，随后在串口终端中显示 Shell 提示符。该过程验证了第 3 章到第 6 章中多个模块的衔接。
+
+Shell 功能测试主要围绕常见用户程序展开。通过 \verb|ls| 检查目录读取和用户程序执行，通过 \verb|cat|、\verb|echo|、\verb|cp|、\verb|rm|、\verb|mkdir| 检查基本文件读写和目录操作，通过 \verb|cd| 和提示符路径变化检查当前目录维护。这里不把文件系统内部算法作为分析重点，而是把这些命令作为“用户态程序能够通过系统调用访问文件系统”的验证样例。若命令能够从 \verb|/bin| 查找、由 Shell \verb|fork| 后 \verb|exec|，并正常返回 Shell，则说明 ELF 加载、文件描述符、进程等待和终端输出路径共同工作。
+
+进程管理测试主要关注 \verb|fork|、\verb|exec|、\verb|wait|、\verb|sleep| 和调度返回。仓库中的 \verb|fork.c|、\verb|forks.c|、\verb|performance.c|、\verb|test.c| 等用户程序可以用于观察父子进程返回值、多个子进程并发运行、父进程等待子进程退出以及时间片调度效果。对于 Shell 来说，普通命令执行本身也是一次综合性进程测试：父进程等待，子进程重定向描述符并执行目标程序，程序退出后父进程重新获得提示符。
+
+管道与重定向测试可通过 Shell 的命令树执行路径观察。管道命令会调用 \verb|pipe| 创建描述符对，左侧命令复制写端到标准输出，右侧命令复制读端到标准输入；重定向则通过 \verb|open|、\verb|creat|、\verb|close| 和 \verb|dup| 修改标准输入输出。典型样例包括把 \verb|echo| 输出写入文件，再用 \verb|cat| 读取，或用管道连接两个简单命令。该类测试覆盖了系统调用层、打开文件表、管道文件对象、Shell 描述符管理和进程生命周期。
+
+信号测试主要包括两类。一类来自用户程序，例如 \verb|sig.c|、\verb|newsig.c|、\verb|sigTest.c| 可安装处理函数、发送信号或进入睡眠等待信号；另一类来自终端控制字符，例如在 Shell 或测试程序运行时输入 Ctrl-C，TTY 层应向相关进程发送 \verb|SIGINT|。如果用户安装了处理函数，内核应构造信号处理上下文并在 \verb|sigret| 后恢复；如果未安装处理函数，进程按默认动作结束。该类测试验证第 4 章和第 5 章中异常、系统调用、信号和进程切换的组合路径。
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.95\textwidth]{figures/validation-matrix.pdf}
+  \caption{系统功能验证覆盖关系}\label{fig:validation-matrix}
+\end{figure}
+
+\figref{fig:validation-matrix} 将测试对象和内核模块对应起来。启动测试覆盖机器初始化、内存管理、Trap 和文件系统挂载；Shell 命令覆盖用户程序加载、系统调用和 TTY；进程类程序覆盖调度与父子进程；管道和重定向覆盖文件描述符与进程协作；信号测试覆盖 TTY、异常和用户态上下文恢复。这些测试并不等价于完整自动化测试体系，但对于教学操作系统移植而言，能够确认系统已经具备从启动到交互、从命令执行到进程回收的基本闭环。
+
+\section{结果分析}
+
+从构建结果看，当前系统已经形成了面向 RISC-V 的完整构建链。Rust 内核能够以 \verb|no_std| 方式生成 RISC-V ELF，用户库、Shell 和用户程序能够交叉编译为 ELF64/RISC-V，可执行文件和资源能够被写入 Unix V6++ 文件系统镜像，QEMU virt 机器能够通过 OpenSBI 加载内核并挂载 VirtIO 磁盘。这说明重构不只是完成了内核语言迁移，还补齐了用户态程序、镜像制作和仿真运行所需的工程链条。
+
+从功能结果看，当前系统相较 \verb|main| 分支完成了三方面迁移。首先，体系结构由 IA-32/PC 迁移到 RISC-V/QEMU virt，启动、中断、系统调用、页表和设备访问路径均发生变化。其次，内核主体由 C++ 改写为 Rust，进程、文件对象、文本段引用、中断保护等资源的生命周期表达更明确，错误返回也更多通过 \verb|Result| 和枚举呈现。再次，用户态环境保持 Unix V6++ 的 Shell 和常用命令语义，说明重构并未切断原教学系统的使用方式。
+
+也需要看到，当前验证仍以手工交互和模块级观察为主，自动化程度有限。文件系统和 Buffer 管理虽然能够支撑基本命令与镜像访问，但其内部一致性、异常恢复和压力场景需要更系统的测试；进程退出状态、子进程时间累计等细节仍有简化；部分系统调用保留为空实现或返回 \verb|ENOSYS|。这些限制不影响本文所述的 RISC-V/Rust 移植主线，但说明系统仍处于教学内核的可运行框架阶段，后续可以继续补充自动化测试、压力测试和更完整的 POSIX 语义。
+
+\section{本章小结}
+
+本章介绍了当前系统的构建、运行和测试验证情况。系统通过 Makefile 统一组织 Rust 内核、C 用户库、Shell、用户程序和文件系统镜像构建，通过 \verb|qemu-system-riscv64| 的 virt 机器、OpenSBI、UART 和 VirtIO Block 完成运行。功能测试覆盖启动日志、Shell 交互、常用命令、进程生命周期、管道重定向和信号处理等路径，能够说明当前系统已经从底层启动到用户态交互形成可运行闭环。
+
+与重构前 \verb|main| 分支相比，当前验证对象从 IA-32/C++/ATA/PC 机器模型转向 RISC-V/Rust/VirtIO/QEMU virt 模型。构建与测试结果表明，本文相关工作完成了核心平台迁移和用户态环境适配，也保留了 Unix V6++ 作为教学系统的可观察性和可修改性。后续若继续完善，可在自动化测试、异常场景覆盖、文件系统一致性检查和系统调用完整性方面进一步加强。
