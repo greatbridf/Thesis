@@ -1,6 +1,6 @@
 \chapter{RISC-V 启动与内存管理实现}\label{chap:riscv-mm}
 
-启动和地址空间是移植工作最先遇到的部分。原 IA-32 版本 Unix V6++ 的启动过程依赖传统 PC 的实模式、保护模式和引导扇区加载机制，内存分配则保留了接近 Unix V6 的空闲块表思路；RISC-V/QEMU virt 平台的入口条件不同，内核通常由 QEMU 和 OpenSBI 共同引导，进入内核时已经处在 RISC-V 特权架构定义的执行环境中。本章只围绕后续 Trap、进程和用户程序运行所需的启动、页表和页资源基础展开，不把文件系统或完整内存管理策略作为单独重点。
+启动和地址空间是移植工作最先遇到的部分。原 IA-32 版本 Unix V6++ 的启动过程依赖传统 PC 的实模式、保护模式和引导扇区加载机制，内存分配则保留了接近 Unix V6 的空闲块表思路；RISC-V/QEMU virt 平台的入口条件不同，内核通常由 QEMU 和 OpenSBI 共同引导，进入内核时已经处在 RISC-V 特权架构定义的执行环境中\cite{qemu_riscv_doc,opensbi_project}。本章只围绕后续 Trap、进程和用户程序运行所需的启动、页表和页资源基础展开，不把文件系统或完整内存管理策略作为单独重点。
 
 \section{内核启动流程}
 
@@ -37,7 +37,7 @@ Rust 重写后，启动流程更多表现为入口函数中的一组有序调用
 
 \section{地址空间与页表设计}
 
-RISC-V 64 位平台常用 Sv39 分页模式。Sv39 使用三级页表，虚拟地址被划分为多级索引和页内偏移，页表项中包含有效位、读写执行权限、用户位、全局位、访问位和脏位等标志\cite{riscv_privileged_20211203}。当前系统在 \verb|src/machine/page_table.rs| 中定义了 \verb|PageDirectory|、\verb|PageDirectoryEntry|、\verb|PageTable| 和 \verb|PageTableEntry| 等结构，用 Rust 类型对页表项编码、权限标志和页表数组进行封装。
+RISC-V 64 位平台常用 Sv39 分页模式。Sv39 使用三级页表，虚拟地址被划分为多级索引和页内偏移，页表项中包含有效位、读写执行权限、用户位、全局位、访问位和脏位等标志\cite{riscv_unprivileged_20191213,riscv_privileged_20211203}。当前系统在 \verb|src/machine/page_table.rs| 中定义了 \verb|PageDirectory|、\verb|PageDirectoryEntry|、\verb|PageTable| 和 \verb|PageTableEntry| 等结构，用 Rust 类型对页表项编码、权限标志和页表数组进行封装。
 
 系统地址空间需要同时满足内核访问自身代码、数据和管理的物理内存，用户程序获得从低地址开始的用户空间，以及内核访问 UART、PLIC、VirtIO 等 MMIO 设备这三类需求。当前页表据此建立低地址用户映射入口、物理内存恒等映射、内核高地址映射和 MMIO 映射。内核高地址从 \verb|0xc0000000| 开始，MMIO 区域从 \verb|0xf0000000| 开始，物理内存基址为 \verb|0x80000000|。
 
