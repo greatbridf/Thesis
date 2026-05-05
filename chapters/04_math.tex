@@ -1,6 +1,6 @@
 \chapter{中断、异常与系统调用实现}\label{chap:trap-syscall}
 
-中断、异常与系统调用是操作系统内核从“被动等待”转为“响应事件”的核心机制。用户程序通过系统调用主动进入内核，硬件设备通过外部中断通知内核，处理器执行异常则要求内核判断错误来源并采取相应处理。原 IA-32/C++ 版本 Unix V6++ 依赖 IDT、8259A、x86 中断栈帧和多组入口宏完成这些工作；RISC-V/Rust 重构版本则基于 RISC-V 特权架构中的 \verb|stvec|、\verb|sscratch|、\verb|sepc|、\verb|scause|、\verb|stval| 和 \verb|sstatus| 等寄存器重新组织 Trap 框架\cite{riscv_privileged_20211203}。
+中断、异常与系统调用决定了内核如何响应事件。用户程序通过系统调用主动进入内核，硬件设备通过外部中断通知内核，处理器异常则要求内核判断错误来源并处理。原 IA-32/C++ 版本 Unix V6++ 依赖 IDT、8259A、x86 中断栈帧和多组入口宏完成这些工作；RISC-V/Rust 重构版本改用 RISC-V 特权架构中的 \verb|stvec|、\verb|sscratch|、\verb|sepc|、\verb|scause|、\verb|stval| 和 \verb|sstatus| 等寄存器组织 Trap 框架\cite{riscv_privileged_20211203}。
 
 本章介绍当前系统中 Trap 入口、上下文保存、中断异常分发和系统调用处理的实现。与第 3 章类似，本章也会在关键位置说明重构前后实现方式的差异，并适度分析 Rust 在类型化上下文、模式匹配和错误返回表达上的作用。
 
@@ -16,13 +16,13 @@ RISC-V 将同步异常、异步中断和系统调用统一纳入 Trap 机制。�
   \caption{RISC-V Trap 入口与返回流程}\label{fig:trap-flow}
 \end{figure}
 
-\figref{fig:trap-flow} 展示了这一统一入口的基本路径。该设计与原 IA-32 版本存在明显差异。原版本需要为系统调用、时钟中断、键盘中断和不同异常分别设置 IDT 表项，并在多个入口函数中执行保存现场、切换内核、调用处理函数、恢复现场和 \verb|iret| 返回等步骤。重构后，RISC-V 版本将入口收束到一个 \verb|_trap_entry|，再由 Rust 层根据 \verb|scause| 判断事件类型。这样减少了多处入口代码之间的重复，也使异常、中断和系统调用共享同一份上下文结构。
+\figref{fig:trap-flow} 展示了这一统一入口的基本路径。原版本需要为系统调用、时钟中断、键盘中断和不同异常分别设置 IDT 表项，并在多个入口函数中保存现场、切换内核、调用处理函数、恢复现场和 \verb|iret| 返回。RISC-V 版本把入口收束到 \verb|_trap_entry|，再由 Rust 层根据 \verb|scause| 判断事件类型。入口代码变少了，异常、中断和系统调用也自然共享同一份上下文结构。
 
-上下文结构定义在 \verb|src/interrupt/context.rs| 中，包括 \verb|Registers| 和 \verb|TrapContext| 两部分。\verb|Registers| 保存通用寄存器，\verb|TrapContext| 进一步保存 \verb|sstatus|、\verb|sepc|、\verb|scause|、\verb|stval| 和 \verb|kernel_sp|。这些结构使用 \verb|#[repr(C)]| 保证内存布局稳定，并通过 \verb|offset_of!| 生成字段偏移常量，供汇编入口保存和恢复寄存器时使用。这样，汇编代码不需要手写一组与 Rust 结构重复维护的偏移数字，降低了上下文结构调整时产生不一致的风险。
+上下文结构定义在 \verb|src/interrupt/context.rs| 中，包括 \verb|Registers| 和 \verb|TrapContext| 两部分。\verb|Registers| 保存通用寄存器，\verb|TrapContext| 进一步保存 \verb|sstatus|、\verb|sepc|、\verb|scause|、\verb|stval| 和 \verb|kernel_sp|。这些结构使用 \verb|#[repr(C)]| 固定内存布局，并通过 \verb|offset_of!| 生成字段偏移常量，供汇编入口保存和恢复寄存器时使用。这样，汇编代码不需要手写一组与 Rust 结构重复维护的偏移数字，降低了上下文结构调整时产生不一致的风险。
 
 \section{异常与中断分发}
 
-进入 Rust 层后，\verb|trap_handler| 通过 \verb|TrapContext::cause| 读取 \verb|scause| 并分为中断和异常两大类。中断类主要处理 Supervisor Timer 和 Supervisor External；异常类主要处理 Breakpoint、Illegal Instruction、User Environment Call、Instruction/Load/Store Page Fault 以及若干访问异常。Rust 的枚举和模式匹配在这里比较适合表达分发逻辑：代码能够直接按照 \verb|Trap::Interrupt|、\verb|Trap::Exception|、\verb|Interrupt::SupervisorTimer|、\verb|Exception::UserEnvCall| 等分支展开，而不是通过裸整数常量和多层 if 判断完成分发。
+进入 Rust 层后，\verb|trap_handler| 通过 \verb|TrapContext::cause| 读取 \verb|scause|，并区分中断和异常。中断类主要处理 Supervisor Timer 和 Supervisor External；异常类主要处理 Breakpoint、Illegal Instruction、User Environment Call、Instruction/Load/Store Page Fault 以及若干访问异常。这里使用枚举和模式匹配表达分发逻辑：代码直接按照 \verb|Trap::Interrupt|、\verb|Trap::Exception|、\verb|Interrupt::SupervisorTimer|、\verb|Exception::UserEnvCall| 等分支展开，少一些裸整数常量和多层判断。
 
 \begin{figure}[htbp]
   \centering
@@ -48,7 +48,7 @@ RISC-V 将同步异常、异步中断和系统调用统一纳入 Trap 机制。�
   \caption{用户态到内核态的系统调用路径}\label{fig:syscall-path}
 \end{figure}
 
-\figref{fig:syscall-path} 展示了系统调用从用户态 C 库到内核处理函数再返回用户态的路径。当前系统保留了 Unix V6++ 的系统调用编号和主要语义，例如 \verb|exit|、\verb|fork|、\verb|read|、\verb|write|、\verb|open|、\verb|wait|、\verb|exec|、\verb|chdir|、\verb|sleep|、\verb|kill|、\verb|pipe| 和 \verb|signal| 等。部分与当前平台关系不大的调用以空实现或 \verb|ENOSYS| 返回，例如若干未实现编号、\verb|trace| 和部分终端控制调用。这种处理方式有助于保持用户库和 Shell 的接口稳定，同时明确当前系统的功能边界。
+\figref{fig:syscall-path} 展示了系统调用从用户态 C 库到内核处理函数再返回用户态的路径。当前系统保留了 Unix V6++ 的系统调用编号和主要语义，例如 \verb|exit|、\verb|fork|、\verb|read|、\verb|write|、\verb|open|、\verb|wait|、\verb|exec|、\verb|chdir|、\verb|sleep|、\verb|kill|、\verb|pipe| 和 \verb|signal| 等。这些调用支撑第 6 章中的 Shell、TTY、管道和重定向路径，也构成第 7 章功能测试的主要对象。部分与当前平台关系不大的调用以空实现或 \verb|ENOSYS| 返回，例如若干未实现编号、\verb|trace| 和部分终端控制调用。
 
 与原 IA-32/C++ 版本相比，系统调用分发方式也发生了变化。原版本通过 \verb|SystemCallTableEntry| 表保存参数个数和函数指针，系统调用号来自 \verb|eax|，参数从 \verb|ebx| 等寄存器复制到 \verb|u.u_arg|。RISC-V 版本则使用 \verb|a7| 作为系统调用号，\verb|a0| 到 \verb|a5| 作为最多六个参数，并在 Rust 中通过 \verb|match| 表达分发逻辑。表驱动和模式匹配都能完成系统调用派发；当前版本选择 \verb|match| 的原因在于它与 Rust 的枚举、错误返回和模块函数调用结合更自然，也更容易在编译期检查分支书写是否符合类型约束。
 
@@ -56,9 +56,9 @@ RISC-V 将同步异常、异步中断和系统调用统一纳入 Trap 机制。�
 
 系统调用处理中的错误返回沿用了 Unix 风格：内核内部以 \verb|PosixError| 表示错误原因，返回用户态时将错误码取负后写入 \verb|a0|。例如文件描述符无效、权限不足、找不到文件、系统调用未实现等情况都可以通过统一的错误枚举返回。对于仍然沿用原 Unix V6++ 文件系统处理习惯的函数，当前代码提供了 \verb|trap_ret| 和 \verb|trap_void| 包装函数，将 \verb|Userspace::error| 转换为 Rust 的 \verb|KResult|。这样既能复用已有的 Unix V6 风格处理流程，又能让新写的 Rust 代码使用 \verb|Result| 表达成功或失败。
 
-信号处理贯穿异常、终端输入和系统调用返回路径。系统调用进入前，如果当前进程已有待处理信号，内核会优先构造信号处理上下文并返回 \verb|EINTR|；系统调用完成后，内核还会再次检查待处理信号。时钟中断和异常处理也会在合适位置检查当前进程是否需要处理信号。对于用户自定义信号处理函数，内核会保存当前 \verb|TrapContext| 到用户栈，将 \verb|sepc| 改为用户态 handler 地址，并设置返回地址为用户态信号返回跳板。这样，用户程序可以在信号处理函数结束后通过 \verb|sigret| 恢复原先被中断的执行现场。
+信号处理贯穿异常、终端输入和系统调用返回路径。系统调用进入前，如果当前进程已有待处理信号，内核会优先构造信号处理上下文并返回 \verb|EINTR|；系统调用完成后，内核还会再次检查。时钟中断和异常处理也会在合适位置检查当前进程是否需要处理信号。对于用户自定义处理函数，内核保存当前 \verb|TrapContext| 到用户栈，将 \verb|sepc| 改为用户态 handler 地址，并设置返回地址为用户态信号返回跳板。处理函数结束后，用户程序通过 \verb|sigret| 恢复先前被打断的现场。
 
-从 Rust 重构角度看，本部分的主要改进不在于消除所有 unsafe 代码。Trap 入口、用户指针读取、信号上下文压栈和系统调用 ABI 都不可避免地涉及底层内存操作。但重构后的代码将 unsafe 边界集中在少数位置，而将分发、错误转换、信号判断和调度检查放在类型化的 Rust 函数中实现。相比原版本中大量入口宏、寄存器结构和处理函数之间的手工约定，当前实现更容易定位一次 Trap 的完整路径，也更容易在论文和后续实验中解释。
+从 Rust 重构角度看，本部分的改动并不等于消除所有 \verb|unsafe| 代码。Trap 入口、用户指针读取、信号上下文压栈和系统调用 ABI 都涉及底层内存操作。当前实现的处理方式是把这些边界集中到少数位置，分发、错误转换、信号判断和调度检查则放在类型化的 Rust 函数中。与原版本中多组入口宏和手工寄存器约定相比，这种写法更便于定位一次 Trap 的完整路径。
 
 \section{本章小结}
 
