@@ -38,6 +38,6 @@ RISC-V 版本的设备适配还体现了较明显的平台迁移。旧版本依�
 
 \figref{fig:tty-shell-flow} 展示了从输入字节到命令执行的路径。TTY 默认工作在规范输入模式，用户输入一行并按下回车后，因 \verb|read| 等待的 Shell 被唤醒。Shell 的 \verb|main1| 输出提示符，调用 \verb|gets| 读取命令行，再通过 \verb|SpiltCommand| 和 \verb|AnalizeCommand| 构造命令树。对于内建命令 \verb|cd|，Shell 直接调用 \verb|chdir| 并更新当前路径；对于普通命令，Shell 先 \verb|fork|，子进程进行必要的输入输出重定向或管道描述符复制，再尝试执行当前路径下的程序，失败后继续尝试 \verb|/bin| 目录下的同名程序。
 
-当前 Shell 沿用了原 Unix V6++ 用户态 Shell 的主要结构，支持常见命令执行、管道、重定向、后台执行标志以及 \verb|shutdown|。重构没有把 Shell 改写为 Rust 程序，而是保留 C 用户程序和轻量 C 库。内核以 Rust 实现，用户态仍使用 C 编写，学生可以同时观察内核 ABI、C 运行时入口和系统调用封装之间的关系。用户程序通过 \verb|ecall| 进入内核，内核通过 RISC-V 的 \verb|a0|、\verb|a1| 等寄存器传递返回值和参数，这与第 4 章的系统调用路径形成闭环。
+当前 Shell 沿用了原 Unix V6++ 用户态 Shell 的主要结构，支持常见命令执行、管道、重定向、后台执行标志以及 \verb|shutdown|。重构没有把 Shell 改写为 Rust 程序，而是保留 C 用户程序和轻量 C 库。内核以 Rust 实现，用户态仍使用 C 编写，学生可以同时观察内核 ABI、C 运行时入口和系统调用封装之间的关系。用户程序通过 \verb|ecall| 进入内核，内核通过 RISC-V 的 \verb|a0|、\verb|a1| 等寄存器传递返回值和参数，这一路径与第 4 章的系统调用机制相互对应。
 
 TTY 层也和信号机制相连接。当输入字符等于中断、退出或挂起控制字符时，TTY 会根据 \verb|Termios| 配置回显控制字符，并通过进程管理器向相关进程发送 \verb|SIGINT|、\verb|SIGQUIT| 或 \verb|SIGTSTP|。这使用户可以在终端中观察信号递送效果，也为第 7 章中的信号测试提供了交互入口。原 C++ 版本的 TTY 直接面向键盘和显示输出路径，当前版本则把输入输出收束到 UART 串口和 Console 字符设备，更符合 QEMU virt 的无图形运行方式。
