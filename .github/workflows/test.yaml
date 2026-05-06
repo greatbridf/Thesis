@@ -4,6 +4,7 @@ on:
       - master
       - proposal
       - dev
+      - 'build/**'
       - 'feat/**'
       - 'fix/**'
       - 'refactor/**'
