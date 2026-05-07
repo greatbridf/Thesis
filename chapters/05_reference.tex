@@ -130,22 +130,6 @@ TTY 层还与信号机制相连接。当输入字符等于中断、退出或挂�
 
 \figref{fig:validation-matrix} 将测试对象和内核模块对应起来。重定向与读取测试覆盖 Shell 解析、文件描述符和用户程序加载；\verb|fork| 与 \verb|forks| 覆盖进程创建、等待和回收；\verb|sig| 覆盖用户态信号处理函数与进程间信号发送；\verb|sigTest| 加 Ctrl-C 覆盖 TTY 控制字符、前台进程信号和睡眠进程打断。这些测试尚不能替代完整自动化测试体系，但对于教学操作系统移植而言，可以确认系统已经具备从交互命令到进程控制、从普通系统调用到异步信号处理的基本运行路径。
 
-\begin{table}[htbp]
-  \centering
-  \caption{运行截图与测试材料安排}\label{tab:screenshot-materials}
-  \renewcommand{\arraystretch}{1.25}
-  \begin{tabular}{p{0.24\textwidth}p{0.38\textwidth}p{0.26\textwidth}}
-    \toprule
-    材料 & 运行内容 & 论文中对应位置 \\
-    \midrule
-    重定向与读取 & 运行 \verb|ls > output|，随后运行 \verb|cat output| & 图 \ref{fig:test-ls-cat-screenshot} \\
-    进程创建与等待 & 依次运行 \verb|fork| 和 \verb|forks|，截取 PID 输出和返回 Shell 的结果 & 图 \ref{fig:test-fork-screenshot} \\
-    进程间信号 & 运行 \verb|sig|，截取父进程发送信号、子进程处理函数和 wait 输出 & 图 \ref{fig:test-sig-screenshot} \\
-    终端控制字符 & 运行 \verb|sigTest| 后在睡眠期间按下 Ctrl-C，截取进程被打断并返回 Shell 的结果 & 图 \ref{fig:test-sigint-screenshot} \\
-    \bottomrule
-  \end{tabular}
-\end{table}
-
 \section{结果分析}
 
 从构建结果看，当前系统已经形成面向 RISC-V 的构建链。Rust 内核可以以 \verb|no_std| 方式生成 RISC-V ELF，用户库、Shell 和用户程序可以交叉编译为 ELF64/RISC-V，可执行文件和资源可以写入 Unix V6++ 文件系统镜像，QEMU virt 机器可以通过 OpenSBI 加载内核并挂载 VirtIO 磁盘。上述结果表明，重构工作覆盖了内核语言迁移、用户态程序、镜像制作和仿真运行等工程环节。
