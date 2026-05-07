@@ -1,132 +1,82 @@
-\chapter{RISC-V 启动与内存管理实现}\label{chap:riscv-mm}
+\chapter{RISC-V 启动、Trap 与系统调用}\label{chap:trap-syscall}
 
-启动和地址空间是移植工作最先遇到的部分。原 IA-32 版本 Unix V6++ 的启动过程依赖传统 PC 的实模式、保护模式和引导扇区加载机制，内存分配则保留了接近 Unix V6 的空闲块表思路；RISC-V/QEMU virt 平台的入口条件不同，内核通常由 QEMU 和 OpenSBI 共同引导，进入内核时已经处在 RISC-V 特权架构定义的执行环境中\cite{qemu_riscv_doc,opensbi_project}。本章围绕后续 Trap、进程和用户程序运行所需的启动、页表和页资源基础展开，文件系统或完整内存管理策略只作为必要背景出现。
+启动、Trap 和系统调用共同决定内核如何进入运行状态、如何响应硬件事件以及如何接受用户态请求。原 IA-32/C++ 版本 Unix V6++ 依赖传统 PC 的实模式、保护模式、GDT、IDT、8259A 和 x86 中断返回栈帧；RISC-V/Rust 重构版本改用 OpenSBI、Sv39 页表、\texttt{stvec}、\texttt{scause}、\texttt{sepc}、\texttt{sstatus}、PLIC 和 SBI timer 等机制\cite{riscv_privileged_20211203,qemu_riscv_doc}。本章重点分析这些平台相关路径如何被重写，并说明 Rust 类型化上下文对 Trap 分发和错误返回的组织作用。
 
-\section{内核启动流程}
+\section{内核启动与地址空间基础}
 
-重构后系统通过 QEMU 的 \verb|-kernel| 参数加载 RISC-V 内核镜像，并使用 OpenSBI 作为固件层。OpenSBI 完成机器模式下的基础初始化后，将控制权转交给内核。内核入口由链接脚本 \verb|src/kernel-riscv64.ld| 指定，入口符号为 \verb|_start|，加载地址为 \verb|0x80200000|。该地址位于 QEMU virt 平台常用的 DRAM 区域内，并避开了 OpenSBI 占用的低地址空间。
+当前系统通过 QEMU 的 \verb|-kernel| 参数加载 RISC-V 内核镜像，并使用 OpenSBI 作为固件层。OpenSBI 完成机器模式下的基础初始化后，将控制权转交给内核。内核入口由链接脚本 \verb|src/kernel-riscv64.ld| 指定，入口符号为 \verb|_start|，加载地址为 \verb|0x80200000|。该地址位于 QEMU virt 平台常用的 DRAM 区域内，并避开了 OpenSBI 占用的低地址空间。
 
-链接脚本将内核划分为 \verb|.bootstrap|、\verb|.text|、\verb|.rodata|、\verb|.data| 和 \verb|.bss| 等段。其中 \verb|.bootstrap.entry| 保存最早执行的入口代码，\verb|.bootstrap.stack| 保存启动阶段使用的静态栈空间，\verb|__bss_start|、\verb|__bss_end| 和 \verb|__kernel_end| 等符号供 Rust 代码在运行时定位 BSS 段和内核结束位置。原 IA-32 启动代码需要覆盖实模式到保护模式的转换；RISC-V 版本的早期启动任务相对集中，重点在于建立 Rust 运行所需的最小执行环境。
-
-内核入口 \verb|_start| 使用 Rust 的裸函数和内联汇编实现。入口代码先将栈指针 \verb|sp| 设置到预留的 bootstrap 栈顶，然后跳转到 \verb|riscv64_rust_entry|。OpenSBI 传入的 hart 编号和设备树地址保留在参数寄存器中，由 Rust 入口函数接收并输出到串口日志。本文讨论的启动路径围绕当前 QEMU 运行配置展开，重点是把控制流稳定带入 Rust 内核初始化阶段。
+链接脚本将内核划分为 \verb|.bootstrap|、\verb|.text|、\verb|.rodata|、\verb|.data| 和 \verb|.bss| 等段。其中 \verb|.bootstrap.entry| 保存最早执行的入口代码，\verb|.bootstrap.stack| 保存启动阶段使用的静态栈空间，\verb|__bss_start|、\verb|__bss_end| 和 \verb|__kernel_end| 等符号供 Rust 代码在运行时定位 BSS 段和内核结束位置。内核入口 \verb|_start| 使用 Rust 裸函数和内联汇编实现，先将栈指针 \verb|sp| 设置到预留的 bootstrap 栈顶，再跳转到 \verb|riscv64_rust_entry|。Rust 入口清零 BSS 段，初始化串口、页表、页分配器、0 号进程、Trap、缓冲区、PLIC、定时器、文件系统根目录和控制终端，随后创建初始进程并进入调度器。
 
 \begin{table}[htbp]
   \centering
   \caption{RISC-V 内核早期启动阶段}\label{tab:riscv-boot-steps}
-  \renewcommand{\arraystretch}{1.35}
-  \begin{tabular}{p{3.2cm}p{10.2cm}}
+  \renewcommand{\arraystretch}{1.32}
+  \begin{tabular}{p{0.25\textwidth}p{0.63\textwidth}}
     \toprule
-    \textbf{阶段} & \textbf{主要工作} \\
+    阶段 & 主要工作 \\
     \midrule
     QEMU 加载内核 & 将内核 ELF 加载到 \verb|0x80200000|，并准备 virt 平台设备环境 \\
     OpenSBI 转交控制权 & 完成机器模式基础初始化，将 hart 编号和设备树地址传给内核 \\
     \verb|_start| 入口 & 设置 bootstrap 栈，跳转到 Rust 内核入口函数 \\
     BSS 清零 & 根据链接脚本符号清空 \verb|.bss|，使静态数据初值正确 \\
     页表初始化 & 建立内核映射、用户页表入口和 MMIO 映射，写入 \verb|satp| 启用 Sv39 \\
-    核心子系统初始化 & 初始化串口、页管理器、进程零号、Trap、缓冲区、设备和文件系统 \\
+    子系统初始化 & 初始化串口、页管理器、进程零号、Trap、缓冲区、设备和文件系统 \\
     进入调度器 & 创建初始进程并进入调度循环，后续由用户态 Shell 接管交互 \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-\verb|riscv64_rust_entry| 中的初始化顺序体现了内核模块之间的依赖。系统清零 BSS 段后，初始化页目录和用户页表并启用页表保护；串口随后接入，使后续步骤可以通过日志观察；物理页管理器、零号进程和 Trap 入口继续完成初始化，缓冲区、外部中断控制器和定时器再接入运行环境；文件系统超级块、根目录和控制终端放在后续阶段。内核创建初始进程并进入调度器后，平台初始化才与 Unix V6++ 的用户态运行语义连接起来。
+RISC-V 64 位平台常用 Sv39 分页模式。Sv39 使用三级页表，虚拟地址被划分为多级索引和页内偏移，页表项中包含有效位、读写执行权限、用户位、全局位、访问位和脏位等标志\cite{riscv_unprivileged_20191213,riscv_privileged_20211203}。当前系统在 \verb|src/machine/page_table.rs| 中定义 \verb|PageDirectory|、\verb|PageDirectoryEntry|、\verb|PageTable| 和 \verb|PageTableEntry| 等结构，用 Rust 类型对页表项编码、权限标志和页表数组进行封装。系统建立低地址用户映射入口、物理内存恒等映射、内核高地址映射和 MMIO 映射，并通过 \verb|satp| 与 \verb|sfence.vma| 使新的地址翻译规则生效。
 
-RISC-V 版本的启动代码边界与原 IA-32 版本不同。原版本需要在汇编中完成 BIOS 入口、磁盘扇区读取、GDT 设置、保护模式切换和跳转到高地址内核等步骤；重构后，机器模式下的大部分平台初始化由 OpenSBI 承担，内核侧的早期汇编主要集中在设置栈和跳转到 Rust 入口。启动阶段的工作重点由 PC 启动细节转向链接布局、页表建立和 Rust 裸机运行环境。
+启动阶段的边界与原 IA-32 版本不同。原版本需要在汇编中完成 BIOS 入口、磁盘扇区读取、GDT 设置、保护模式切换和跳转到高地址内核等步骤；重构后，机器模式下的大部分平台初始化由 OpenSBI 承担，内核侧的早期汇编主要集中在设置栈和跳转到 Rust 入口。启动阶段的工作重点由 PC 启动细节转向链接布局、页表建立和 Rust 裸机运行环境。
 
-Rust 重写后，启动流程主要表现为入口函数中的一组有序调用。汇编部分负责设置栈和跳转入口，其余初始化逻辑由 Rust 函数表达。底层控制仍然保留，初始化顺序、错误处理和调试输出则更容易沿代码追踪。本文实现覆盖入口函数、链接脚本、段符号、早期栈、串口日志以及后续子系统初始化顺序的配合。
+\section{Trap 处理总体框架}
 
-\section{地址空间与页表设计}
+RISC-V 将同步异常、异步中断和系统调用统一纳入 Trap 机制。当前系统在初始化阶段调用 \verb|init_trap|，将 \verb|stvec| 设置为 \verb|_trap_entry|，并通过 \verb|sscratch| 绑定当前进程的 \verb|TrapContext| 地址。此后，无论是用户态执行 \verb|ecall|、时钟中断到来，还是用户程序触发非法指令或页面异常，处理器都会跳转到同一个 Trap 入口。
 
-RISC-V 64 位平台常用 Sv39 分页模式。Sv39 使用三级页表，虚拟地址被划分为多级索引和页内偏移，页表项中包含有效位、读写执行权限、用户位、全局位、访问位和脏位等标志\cite{riscv_unprivileged_20191213,riscv_privileged_20211203}。当前系统在 \verb|src/machine/page_table.rs| 中定义了 \verb|PageDirectory|、\verb|PageDirectoryEntry|、\verb|PageTable| 和 \verb|PageTableEntry| 等结构，用 Rust 类型对页表项编码、权限标志和页表数组进行封装。
-
-系统地址空间需要同时满足内核访问自身代码、数据和管理的物理内存，用户程序获得从低地址开始的用户空间，以及内核访问 UART、PLIC、VirtIO 等 MMIO 设备这三类需求。当前页表据此建立低地址用户映射入口、物理内存恒等映射、内核高地址映射和 MMIO 映射。内核高地址从 \verb|0xc0000000| 开始，MMIO 区域从 \verb|0xf0000000| 开始，物理内存基址为 \verb|0x80000000|。
-
-\begin{table}[htbp]
-  \centering
-  \caption{当前系统主要地址布局}\label{tab:address-layout}
-  \renewcommand{\arraystretch}{1.35}
-  \begin{tabular}{p{3.6cm}p{3.8cm}p{5.8cm}}
-    \toprule
-    \textbf{区域} & \textbf{地址或范围} & \textbf{用途} \\
-    \midrule
-    DRAM 物理基址 & \verb|0x80000000| & QEMU virt 平台内存起始地址 \\
-    内核加载地址 & \verb|0x80200000| & RISC-V 内核 ELF 加载和链接起点 \\
-    内核高地址基址 & \verb|0xc0000000| & 内核运行时访问物理内存的高地址窗口 \\
-    内核 MMIO 基址 & \verb|0xf0000000| & UART、VirtIO、PLIC 等设备映射窗口 \\
-    用户空间大小 & 约 8MB & 由 4 个用户页表覆盖，每个页表覆盖 2MB \\
-    当前管理内存 & 64MB & 页表和页帧管理器当前纳入管理的物理内存范围 \\
-    \bottomrule
-  \end{tabular}
-\end{table}
-
-页表初始化由 \verb|init_page_directory| 和 \verb|init_user_page_table| 完成。前者清空根页表和二级页表，随后建立低地址页表入口、物理内存恒等映射和内核高地址映射；后者初始化用户页表数组，并将其挂接到低地址页表入口。系统随后调用 \verb|enable_page_protection|，将根页表物理页号写入 \verb|satp|，并执行 \verb|sfence.vma| 刷新 TLB，使新的地址翻译规则生效。
-
-内核高地址映射采用大页映射与普通页表窗口结合的方式。对于大部分物理内存，系统以 2MB 为粒度建立直接映射，以减少页表项数量；对于需要细粒度切换的用户区窗口，则使用普通页表。当前代码中的 \verb|switch_user_struct| 会修改内核页表中固定位置的页表项，将当前进程的用户区物理页映射到内核可访问的窗口中，并刷新 TLB。这样可以保留 Unix V6++ 中类似 u-area 的访问方式，同时适配 RISC-V 的页表机制。
-
-Rust 在页表实现中的作用主要体现在边界表达上。页表项权限通过 \verb|EntryFlags| 位标志表示，读、写、执行、用户、全局等权限组合比手写整数常量更便于检查；\verb|PageTable| 提供索引访问和迭代接口，页表初始化可以写成结构体数组的清空、挂接和映射，分散的地址计算随之减少。底层编码仍需遵守 RISC-V 页表项格式，类型封装主要用于收窄容易出错的操作范围。
-
-\section{与原内存管理方式的对比}
-
-原 IA-32/C++ 版本的页分配由 \verb|PageManager|、\verb|KernelPageManager|、\verb|UserPageManager| 和 \verb|Allocator| 共同完成。其主要数据结构是 \verb|MapNode| 数组，每个节点记录一段空闲区域的起始页号和长度；分配时从空闲表中寻找连续区间，释放时插入空闲表并尝试合并相邻块。这一实现接近 Unix V6 中 \verb|malloc|、\verb|mfree| 的思路，便于展示早期 Unix 内存管理方法。
-
-重构后的 RISC-V/Rust 版本继续区分内核页和用户页，底层分配算法调整为 Buddy 分配器，并引入 \verb|PhysPage| 作为每个物理页的描述结构。Buddy 分配器适合按 2 的幂次申请和释放连续页，也便于同内核栈、用户进程地址空间和大对象分配配合。页资源在模块之间传递时不只以裸地址表示，还被封装为 \verb|KernelPages|、\verb|UserPages| 和 \verb|KernelStack| 等类型。
-
-\begin{table}[htbp]
-  \centering
-  \caption{原内存管理实现与重构后实现对比}\label{tab:mm-before-after}
-  \renewcommand{\arraystretch}{1.35}
-  \begin{tabular}{p{3.2cm}p{5.1cm}p{5.2cm}}
-    \toprule
-    \textbf{比较维度} & \textbf{原 IA-32/C++ 版本} & \textbf{RISC-V/Rust 重构版本} \\
-    \midrule
-    空闲页组织 & \verb|MapNode| 空闲块表 & \verb|PhysPage| 页描述结构与 Buddy 分配器 \\
-    内核/用户页划分 & \verb|KernelPageManager| 与 \verb|UserPageManager| & \verb|KERNEL_PAGE_MANAGER| 与 \verb|USER_PAGE_MANAGER| \\
-    分配接口 & 显式调用 \verb|AllocMemory| 返回地址 & 返回封装后的 \verb|KernelPages| 或 \verb|UserPages| \\
-    释放接口 & 调用方显式调用 \verb|FreeMemory| & 封装类型在 \verb|Drop| 中归还页资源 \\
-    内核堆 & 重载 \verb|operator new/delete| 接入 \verb|KernelAllocator| & \verb|#[global_allocator]| 接入 slab 与页分配器 \\
-    进程内核栈 & 与 IA-32 任务切换和内核栈约定相关 & \verb|KernelStack| 持有页资源并提供栈顶地址 \\
-    \bottomrule
-  \end{tabular}
-\end{table}
-
-这种差异可以用\figref{fig:mm-lifetime}概括。原版本中，内存块通常以地址和长度的形式在调用链中流转，分配和释放由具体调用点显式完成；重构后，页资源先由分配器创建，再进入持有所有权的 Rust 对象，并在对象生命周期结束时通过 \verb|Drop| 归还。两种写法都能表达页资源的申请和释放，当前版本则把资源归属和释放位置写入类型结构。
+\verb|_trap_entry| 使用裸函数和内联汇编实现。进入 Trap 后，汇编代码通过 \verb|csrrw| 交换 \verb|sscratch| 和临时寄存器，由此取得当前进程的 \verb|TrapContext| 指针。入口代码随后保存通用寄存器、\verb|sepc|、\verb|scause|、\verb|sstatus|、\verb|stval| 等状态；Trap 来自用户态时，还会切换到该进程的内核栈。上下文保存完成后，入口代码调用 Rust 层的 \verb|trap_handler| 分发事件；处理结束后恢复寄存器和控制状态，并执行 \verb|sret| 返回原执行流。
 
 \begin{figure}[htbp]
   \centering
-  \includegraphics[width=0.95\textwidth]{figures/mm-lifetime.pdf}
-  \caption{页资源生命周期管理方式对比}\label{fig:mm-lifetime}
+  \includegraphics[width=0.95\textwidth]{figures/trap-flow.pdf}
+  \caption{RISC-V Trap 入口与返回流程}\label{fig:trap-flow}
 \end{figure}
 
-需要说明的是，C++ 本身也支持 RAII，原 Unix V6++ 的内存管理实现主要服务于还原 Unix V6 的管理思想，代码组织上更多采用显式分配、显式释放和全局管理器。本文的 Rust 重构沿着跨平台移植过程重新表达资源管理边界，具体依托所有权、生命周期和 \verb|Drop| 机制完成。这样既保留了页资源来源与回收路径的可观察性，又减少了调用点遗漏释放或释放路径分散带来的维护压力。
+\figref{fig:trap-flow} 展示了这一统一入口的基本路径。原版本需要为系统调用、时钟中断、键盘中断和不同异常分别设置 IDT 表项，并在多个入口函数中保存现场、切换内核、调用处理函数、恢复现场和 \verb|iret| 返回。RISC-V 版本把入口收束到 \verb|_trap_entry|，再由 Rust 层根据 \verb|scause| 判断事件类型。入口路径集中后，异常、中断和系统调用共享同一份上下文结构，后续分发也更容易沿 \verb|TrapContext| 追踪。
 
-\section{物理内存管理}
+上下文结构定义在 \verb|src/interrupt/context.rs| 中，包括 \verb|Registers| 和 \verb|TrapContext| 两部分。\verb|Registers| 保存通用寄存器，\verb|TrapContext| 进一步保存 \verb|sstatus|、\verb|sepc|、\verb|scause|、\verb|stval| 和 \verb|kernel_sp|。这些结构使用 \verb|#[repr(C)]| 固定内存布局，并通过 \verb|offset_of!| 生成字段偏移常量，供汇编入口保存和恢复寄存器时使用。汇编代码由此不需要手写一组与 Rust 结构重复维护的偏移数字，减少了上下文结构调整时出现不一致的风险。
 
-页表建立之后，内核需要管理可分配的物理页。当前系统在 \verb|src/mm/| 目录中实现物理页描述、内核页分配、用户页分配、内核栈和全局堆分配器等功能。物理页大小为 4KB，系统以 \verb|PhysPage| 描述每个页帧，并在 \verb|MemoryZone| 中维护页帧号与页描述结构之间的映射关系。当前实现将 64MB 物理内存纳入页帧管理。
+\section{异常与中断分发}
 
-\verb|init_page_managers| 是物理页管理的初始化入口。该函数通过链接脚本导出的 \verb|__kernel_end| 获得内核镜像结束地址，并按页对齐后作为可分配内核页区域的起点。系统将物理内存划分为内核页区域和用户页区域，前者主要用于内核对象、内核堆、设备缓冲区和内核栈，后者主要用于进程地址空间。两个区域分别由 \verb|KERNEL_PAGE_MANAGER| 和 \verb|USER_PAGE_MANAGER| 管理，底层均使用 Buddy 分配器。原版本在头文件中写定内核页池和用户页池起始地址；当前实现依赖链接脚本导出的内核结束符号来确定可分配区域起点，页分配区域可以随内核镜像大小调整。
+进入 Rust 层后，\verb|trap_handler| 通过 \verb|TrapContext::cause| 读取 \verb|scause|，并区分中断和异常。中断类主要处理 Supervisor Timer 和 Supervisor External，异常类主要处理 Breakpoint、Illegal Instruction、User Environment Call、Instruction/Load/Store Page Fault 以及若干访问异常。这里使用枚举和模式匹配表达分发逻辑，代码按照 \verb|Trap::Interrupt|、\verb|Trap::Exception|、\verb|Interrupt::SupervisorTimer|、\verb|Exception::UserEnvCall| 等分支展开，减少裸整数常量和多层判断。
 
-\begin{table}[htbp]
+\begin{figure}[htbp]
   \centering
-  \caption{物理内存管理相关模块}\label{tab:mm-modules}
-  \renewcommand{\arraystretch}{1.35}
-  \begin{tabular}{p{3.5cm}p{9.8cm}}
-    \toprule
-    \textbf{模块} & \textbf{职责} \\
-    \midrule
-    \verb|zone.rs| & 建立物理页描述数组，实现页帧号与 \verb|PhysPage| 的相互定位 \\
-    \verb|page.rs| & 定义 \verb|PhysPage|、\verb|KernelPages|、\verb|UserPages| 和页列表适配器 \\
-    \verb|page_manager.rs| & 初始化内核页和用户页 Buddy 分配器，提供页级分配与释放接口 \\
-    \verb|allocator.rs| & 实现内核全局堆分配器，小对象使用 slab，大对象回退到页分配器 \\
-    \verb|kstack.rs| & 为每个进程分配独立内核栈，并计算栈顶虚拟地址 \\
-    \verb|swapper_manager.rs| & 维护交换区分配，用于继承 Unix V6++ 中换出相关结构 \\
-    \bottomrule
-  \end{tabular}
-\end{table}
+  \includegraphics[width=0.95\textwidth]{figures/trap-dispatch.pdf}
+  \caption{中断与异常分发路径}\label{fig:trap-dispatch}
+\end{figure}
 
-页分配接口设计区分 \verb|KernelPages| 和 \verb|UserPages|。两个类型共享底层 \verb|Pages| 泛型实现，但根据类型参数选择不同的分配器。\verb|Pages| 实现了 \verb|Drop|；封装对象释放时，其持有的物理页会归还给对应的 Buddy 分配器。内核资源生命周期较复杂，手工释放容易分散到多条路径。将页的所有权和释放动作绑定到类型，可以减少这类遗漏。进程地址空间、共享文本段和交换区仍然需要仔细处理所有权转移，类型封装只是提供了更清楚的边界。
+对于时钟中断，系统使用 SBI timer 设置下一次时钟事件。当前实现将每秒中断次数设置为 60 次，定时器中断到来后更新用户态时间或内核态时间，增加当前进程的 CPU 使用计数，并在一秒边界更新系统时间。进程通过 \verb|sleep| 等待某个时间点时，系统会在超时后唤醒睡眠队列。时钟中断还会重新计算进程优先级，并在从用户态返回前检查是否需要调度。当前系统把抢占检查放在用户态返回边界，由 \verb|schedule_on_user_return| 触发调度，这与 Unix 风格在陷入返回点进行调度的思路保持一致。
 
-进程相关资源能较清楚地体现这一变化。原版本在 \verb|Process::Expand|、\verb|Process::Exit| 和 \verb|ProcessManager::NewProc| 等路径中显式申请和释放用户页，并通过进程的 \verb|p_addr| 与 \verb|p_size| 记录进程图像位置；重构后，进程结构中的用户页、文本段引用和内核栈分别由对应字段持有，进程对象被移除或字段被替换时，相关资源会沿着类型定义的生命周期释放。操作系统内核仍然需要明确设计释放路径，当前实现只是把部分释放路径从零散调用点收束到资源类型本身。
+外部中断通过 PLIC 的 claim/complete 流程处理。当前主要启用 UART0 外部中断；当 PLIC 返回 UART 中断号后，内核从串口读取输入字节，并交给 TTY 层处理。TTY 层完成回显、行规程和控制字符处理，输入中断字符时还会向进程发送相应信号。处理完毕后，内核向 PLIC 写回 complete。原 IA-32 版本通过 8259A 和键盘中断入口处理输入；RISC-V/QEMU virt 版本的输入路径改为 UART、PLIC 和 TTY 的组合。
 
-内核堆分配器由 \verb|allocator.rs| 实现，并通过 \verb|#[global_allocator]| 注册为 Rust 全局分配器。小于等于 2048 字节的分配请求由 slab 分配器处理，较大对象从内核页分配器中申请连续页。接入该分配器后，内核可以使用 Rust 标准分配接口中的 \verb|Box|、\verb|Vec| 等容器，为进程表、文件对象、目录项缓存和其他动态结构提供基础。由于系统运行在 \verb|no_std| 环境下，这一全局分配器也是使用 \verb|alloc| crate 的前提之一。
+异常处理依据异常来源区分用户态和内核态。用户态非法指令转换为 \verb|SIGILL|，用户态页面异常通常转换为 \verb|SIGSEGV|，访存对齐或总线类错误转换为 \verb|SIGBUS|。异常发生在内核态时，系统输出包含 \verb|scause|、\verb|sepc|、\verb|stval| 等信息的 panic 日志并停止。这一处理延续了 Unix V6++ 将用户态异常映射为信号的思路，同时利用 RISC-V 的 \verb|stval| 和 \verb|sepc| 信息提供调试线索。
 
-进程内核栈也由内存管理模块分配。当前每个进程拥有独立的 \verb|KernelStack|，大小为 8 页，即 32KB。创建进程时，内核通过 \verb|KernelStack::new| 从内核页分配器申请栈空间，并通过物理地址到高地址虚拟地址的转换计算栈顶。独立内核栈配合 Trap 上下文和任务上下文切换，使每个进程陷入内核后都有对应的内核执行空间。
+\section{系统调用接口}
+
+系统调用是用户程序请求内核服务的主要接口。当前用户态 C 库在 \verb|lib/src/syscall.h| 中封装了 \verb|__syscall0| 到 \verb|__syscall3| 等内联函数。系统调用号放入 \verb|a7|，参数依次放入 \verb|a0|、\verb|a1|、\verb|a2| 等寄存器，随后执行 \verb|ecall| 指令。处理完成后，返回值由内核写回 \verb|a0|。在用户库层，负返回值会通过 \verb|__syscall_ret| 转换为用户程序习惯的失败返回。
+
+内核收到 \verb|ecall| 后，在 \verb|trap_handler| 中识别 \verb|Exception::UserEnvCall|，再调用 \verb|system_call::handle_user_ecall|。该函数先检查当前进程是否有待处理信号，再将 \verb|sepc| 前进 4 字节，避免 Trap 返回后重复执行同一条 \verb|ecall|；随后从 \verb|TrapContext| 中取出系统调用参数，写入 Unix V6++ 风格的 \verb|Userspace::args|，并把 \verb|a0| 位置作为返回值写入位置。内核按照系统调用号分发到进程管理、文件系统、时间、信号等处理函数。
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.95\textwidth]{figures/syscall-path.pdf}
+  \caption{用户态到内核态的系统调用路径}\label{fig:syscall-path}
+\end{figure}
+
+\figref{fig:syscall-path} 展示了系统调用从用户态 C 库到内核处理函数再返回用户态的路径。当前系统保留了 Unix V6++ 的系统调用编号和主要语义，例如 \verb|exit|、\verb|fork|、\verb|read|、\verb|write|、\verb|open|、\verb|wait|、\verb|exec|、\verb|chdir|、\verb|sleep|、\verb|kill|、\verb|pipe| 和 \verb|signal| 等。这些调用支撑 Shell、TTY、管道和重定向路径，也是功能测试的主要对象。部分与当前平台关系不大的调用以空实现或 \verb|ENOSYS| 返回，例如若干未实现编号、\verb|trace| 和部分终端控制调用。
+
+系统调用分发方式也随体系结构变化而调整。原版本通过 \verb|SystemCallTableEntry| 表保存参数个数和函数指针，系统调用号来自 \verb|eax|，参数从 \verb|ebx| 等寄存器复制到 \verb|u.u_arg|。RISC-V 版本使用 \verb|a7| 作为系统调用号，\verb|a0| 到 \verb|a5| 作为最多六个参数，并在 Rust 中通过 \verb|match| 表达分发逻辑。表驱动和模式匹配都能完成系统调用派发；当前版本采用 \verb|match|，便于同 Rust 的枚举、错误返回和模块函数调用结合，也便于在编译期检查分支书写是否符合类型约束。
+
+系统调用处理中的错误返回沿用了 Unix 风格。内核内部以 \verb|PosixError| 表示错误原因，返回用户态时将错误码取负后写入 \verb|a0|。文件描述符无效、权限不足、找不到文件、系统调用未实现等情况，都通过统一的错误枚举返回。对于沿用原 Unix V6++ 文件系统处理习惯的函数，当前代码提供 \verb|trap_ret| 和 \verb|trap_void| 包装函数，将 \verb|Userspace::error| 转换为 Rust 的 \verb|KResult|。该处理保留已有 Unix V6 风格流程，也使新写的 Rust 代码可以使用 \verb|Result| 表达成功或失败。
