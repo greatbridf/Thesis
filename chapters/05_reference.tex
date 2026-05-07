@@ -26,7 +26,7 @@ TTY 层还与信号机制相连接。当输入字符等于中断、退出或挂�
 
 当前仓库采用 Makefile 组织整体构建，用 Cargo 构建 Rust 内核，用 RISC-V 交叉 GCC 构建用户态 C 程序。内核部分在 \verb|src/Makefile| 中调用 \verb|cargo +nightly-2026-04-07 rustc|，目标三元组为 \verb|riscv64gc-unknown-none-elf|，并使用 \verb|-Z build-std=core,alloc,compiler_builtins| 构建裸机所需的标准库子集。Cargo 输出静态库后，Makefile 再用 \verb|rust-lld| 和 \verb|src/kernel-riscv64.ld| 链接生成 \verb|src/kernel.elf|。这种流程与普通用户态 Rust 程序不同，原因在于内核运行在无标准库、无操作系统服务的环境中，只能使用 \verb|core|、\verb|alloc| 和明确接入的底层库。
 
-用户态部分仍由 C 语言实现。用户库 \verb|lib/libv6pptongji.a|、Shell 的 \verb|Shell.exe| 以及 \verb|programs| 目录下的 \verb|ls|、\verb|cat|、\verb|echo|、\verb|cp|、\verb|rm|、\verb|mkdir|、\verb|fork|、\verb|sig| 等程序都通过 \verb|riscv64-unknown-elf-gcc| 编译，并使用 \verb|-march=rv64gc|、\verb|-mabi=lp64d|、\verb|-ffreestanding|、\verb|-nostdlib| 等选项生成独立的 RISC-V ELF64 可执行文件。链接时指定 \verb|-Ttext-segment=0x400000| 和入口 \verb|_start|，与第 4 章中的 ELF 加载地址和用户态 C 运行时入口相对应。
+用户态部分仍由 C 语言实现。用户库 \verb|lib/libv6pptongji.a|、Shell 的 \verb|Shell.exe| 以及 \verb|programs| 目录下的 \verb|ls|、\verb|cat|、\verb|echo|、\verb|cp|、\verb|rm|、\verb|mkdir|、\verb|fork|、\verb|sig| 等程序都通过 \verb|riscv64-unknown-elf-gcc| 编译，并使用 \verb|-march=rv64gc|、\verb|-mabi=lp64d|、\verb|-ffreestanding|、\verb|-nostdlib| 等选项生成独立的 RISC-V ELF64 可执行文件。链接时指定 \verb|-Ttext-segment=0x400000| 和入口 \verb|_start|，与第 3 章中的 ELF 加载地址和用户态 C 运行时入口相对应。
 
 \begin{figure}[htbp]
   \centering

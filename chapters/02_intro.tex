@@ -1,76 +1,82 @@
-\chapter{系统总体设计}\label{chap:system-design}
+\chapter{RISC-V 启动、Trap 与系统调用}\label{chap:trap-syscall}
 
-Unix V6++ 的 RISC-V/Rust 重构没有采用对 C++ 源文件逐句翻译的方式。本文在保留 Unix V6++ 教学语义的基础上，重新适配 RISC-V 平台的启动方式、特权级机制、地址空间组织、设备模型和用户程序 ABI。本章从重构前系统、当前系统架构和迁移取舍三个层面说明总体方案，内存管理和文件系统只在支撑整机运行的范围内展开。
+启动、Trap 和系统调用共同决定内核如何进入运行状态、如何响应硬件事件以及如何接受用户态请求。原 IA-32/C++ 版本 Unix V6++ 依赖传统 PC 的实模式、保护模式、GDT、IDT、8259A 和 x86 中断返回栈帧；RISC-V/Rust 重构版本改用 OpenSBI、Sv39 页表、\texttt{stvec}、\texttt{scause}、\texttt{sepc}、\texttt{sstatus}、PLIC 和 SBI timer 等机制\cite{riscv_privileged_20211203,qemu_riscv_doc}。本章重点分析这些平台相关路径如何被重写，并说明 Rust 类型化上下文对 Trap 分发和错误返回的组织作用。
 
-\section{重构前系统分析}
+\section{内核启动与地址空间基础}
 
-重构前的 Unix V6++ 面向 IA-32 平台，内核主体采用 C++ 语言实现。其整体结构延续 Unix V6 的设计思想，以进程、文件、inode、缓冲区、设备和系统调用为核心抽象，同时通过 C++ 类对各个模块进行封装。该版本能够在传统 PC 仿真环境中运行，并通过引导扇区、保护模式初始化、中断描述符表、页表、ATA 磁盘驱动和终端设备等机制完成一个小型 Unix-like 系统所需的基本功能。
+当前系统通过 QEMU 的 \verb|-kernel| 参数加载 RISC-V 内核镜像，并使用 OpenSBI 作为固件层。OpenSBI 完成机器模式下的基础初始化后，将控制权转交给内核。内核入口由链接脚本 \verb|src/kernel-riscv64.ld| 指定，入口符号为 \verb|_start|，加载地址为 \verb|0x80200000|。该地址位于 QEMU virt 平台常用的 DRAM 区域内，并避开了 OpenSBI 占用的低地址空间。
 
-教学使用中，原系统的模块较完整，层次也较直观，能够呈现操作系统内部各部分的协作关系。用户程序通过系统调用进入内核，系统调用再调用文件系统或进程管理模块；文件系统通过 inode 和缓冲区管理访问块设备；进程调度依赖时钟中断和进程状态转换。这些机制共同构成了一个可观察、可修改、可调试的教学内核。
-
-移植时，原系统也暴露出较强的平台耦合。启动代码依赖 IA-32 实模式到保护模式的切换；中断处理依赖 GDT、IDT、8259A 等 PC 平台机制；块设备访问依赖 ATA/IDE 设备模型；用户程序格式和运行约定也与原平台紧密相关。若希望将 Unix V6++ 迁移到 RISC-V 教学平台，仅保留上层接口是不够的，必须重新设计体系结构相关层，并调整内核模块之间的边界。
-
-\section{重构后系统架构}
-
-重构后的系统以 RISC-V 64 位平台为目标，运行环境选用 QEMU virt 机器和 OpenSBI。内核主体采用 Rust 语言实现，用户态库、Shell 和常用用户程序仍使用 C 语言编写，并通过 RISC-V 交叉工具链编译为 ELF64/RISC-V 可执行文件。系统运行时由 QEMU 加载内核，内核完成初始化后创建初始进程，加载用户态 Shell，最终形成可交互的教学操作系统环境。
-
-重构后系统可划分为启动与平台、地址空间与页资源、Trap 与系统调用、进程管理、文件设备与终端、用户态支持等部分。启动与平台代码处理 OpenSBI 入口、串口输出、平台常量和特权寄存器访问；地址空间与页资源代码维护 Sv39 页表、内核栈和用户空间；Trap 与系统调用代码保存上下文并分发时钟中断、外部中断和系统调用；进程管理代码负责进程控制块、调度、上下文切换、fork/exec/wait/exit 和信号处理；文件设备与终端代码向上提供 Unix V6 文件接口、VirtIO 块设备和 TTY；用户态支持代码把 C 用户库、Shell 和测试程序编译为 ELF64/RISC-V 程序，并通过系统调用与内核交互。
-
-\begin{figure}[htbp]
-  \centering
-  \includegraphics[width=0.95\textwidth]{figures/system-architecture.pdf}
-  \caption{RISC-V/Rust 重构后系统分层结构}\label{fig:system-architecture}
-\end{figure}
+链接脚本将内核划分为 \verb|.bootstrap|、\verb|.text|、\verb|.rodata|、\verb|.data| 和 \verb|.bss| 等段。其中 \verb|.bootstrap.entry| 保存最早执行的入口代码，\verb|.bootstrap.stack| 保存启动阶段使用的静态栈空间，\verb|__bss_start|、\verb|__bss_end| 和 \verb|__kernel_end| 等符号供 Rust 代码在运行时定位 BSS 段和内核结束位置。内核入口 \verb|_start| 使用 Rust 裸函数和内联汇编实现，先将栈指针 \verb|sp| 设置到预留的 bootstrap 栈顶，再跳转到 \verb|riscv64_rust_entry|。Rust 入口清零 BSS 段，初始化串口、页表、页分配器、0 号进程、Trap、缓冲区、PLIC、定时器、文件系统根目录和控制终端，随后创建初始进程并进入调度器。
 
 \begin{table}[htbp]
   \centering
-  \caption{重构前后系统结构对比}\label{tab:system-before-after}
-  \renewcommand{\arraystretch}{1.35}
-  \begin{tabular}{p{0.2\textwidth}p{0.34\textwidth}p{0.34\textwidth}}
+  \caption{RISC-V 内核早期启动阶段}\label{tab:riscv-boot-steps}
+  \renewcommand{\arraystretch}{1.32}
+  \begin{tabular}{p{0.25\textwidth}p{0.63\textwidth}}
     \toprule
-    比较维度 & 重构前系统 & 重构后系统 \\
+    阶段 & 主要工作 \\
     \midrule
-    目标平台 & IA-32 传统 PC 平台 & RISC-V 64 位 QEMU virt 平台 \\
-    内核语言 & C++ 为主，汇编用于启动和上下文切换 & Rust 为主，少量汇编用于 Trap 入口和上下文切换 \\
-    启动方式 & 引导扇区加载内核，完成实模式到保护模式切换 & QEMU/OpenSBI 加载内核，进入 RISC-V Rust 入口 \\
-    中断机制 & IDT、8259A、时钟与键盘/磁盘中断 & \texttt{stvec}、SBI timer、PLIC 和 UART 外部中断 \\
-    块设备 & ATA/IDE 磁盘访问 & VirtIO Block 设备访问磁盘镜像 \\
-    用户程序 & 原平台可执行文件与用户库 & ELF64/RISC-V 用户程序、C 用户库和 Shell \\
-    构建方式 & CMake/Makefile 组织 C++ 内核与用户程序 & Cargo/Makefile 混合构建 Rust 内核、用户库和镜像 \\
+    QEMU 加载内核 & 将内核 ELF 加载到 \verb|0x80200000|，并准备 virt 平台设备环境 \\
+    OpenSBI 转交控制权 & 完成机器模式基础初始化，将 hart 编号和设备树地址传给内核 \\
+    \verb|_start| 入口 & 设置 bootstrap 栈，跳转到 Rust 内核入口函数 \\
+    BSS 清零 & 根据链接脚本符号清空 \verb|.bss|，使静态数据初值正确 \\
+    页表初始化 & 建立内核映射、用户页表入口和 MMIO 映射，写入 \verb|satp| 启用 Sv39 \\
+    子系统初始化 & 初始化串口、页管理器、进程零号、Trap、缓冲区、设备和文件系统 \\
+    进入调度器 & 创建初始进程并进入调度循环，后续由用户态 Shell 接管交互 \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-源码目录与上述划分基本对应。内核入口和初始化流程位于 \verb|src/lib.rs|，RISC-V 页表和特权寄存器相关代码位于 \verb|src/machine/|，物理页、内核栈和交换区管理位于 \verb|src/mm/|，Trap、时钟、PLIC 和系统调用分发位于 \verb|src/interrupt/|，进程管理位于 \verb|src/proc/|，文件系统位于 \verb|src/fs/|，块设备、缓冲区和 VirtIO 驱动位于 \verb|src/dev/|，终端处理位于 \verb|src/tty.rs|。这些目录也可沿一次 Shell 命令的执行路径理解：用户程序发起系统调用后进入 Trap，进程管理决定当前执行流，文件或设备层完成访问，再把结果返回用户态。
+RISC-V 64 位平台常用 Sv39 分页模式。Sv39 使用三级页表，虚拟地址被划分为多级索引和页内偏移，页表项中包含有效位、读写执行权限、用户位、全局位、访问位和脏位等标志\cite{riscv_unprivileged_20191213,riscv_privileged_20211203}。当前系统在 \verb|src/machine/page_table.rs| 中定义 \verb|PageDirectory|、\verb|PageDirectoryEntry|、\verb|PageTable| 和 \verb|PageTableEntry| 等结构，用 Rust 类型对页表项编码、权限标志和页表数组进行封装。系统建立低地址用户映射入口、物理内存恒等映射、内核高地址映射和 MMIO 映射，并通过 \verb|satp| 与 \verb|sfence.vma| 使新的地址翻译规则生效。
 
-\section{移植与重构方案}
+启动阶段的边界与原 IA-32 版本不同。原版本需要在汇编中完成 BIOS 入口、磁盘扇区读取、GDT 设置、保护模式切换和跳转到高地址内核等步骤；重构后，机器模式下的大部分平台初始化由 OpenSBI 承担，内核侧的早期汇编主要集中在设置栈和跳转到 Rust 入口。启动阶段的工作重点由 PC 启动细节转向链接布局、页表建立和 Rust 裸机运行环境。
 
-本课题采用平台相关层先行、核心语义逐步迁移、用户态运行验证的方案。最小可启动内核先保证系统可以在 QEMU virt 平台进入 Rust 入口并输出调试信息；Sv39 页表和页级资源管理随后接入，使内核可以访问自身数据结构、设备 MMIO 区域和用户空间；Trap 框架、时钟中断和系统调用入口为进程调度和用户程序运行提供基础；文件接口、块设备、TTY 和 Shell 接入后，验证对象从内核日志扩展为串口终端中的命令执行。
+\section{Trap 处理总体框架}
 
-Rust 内核仍需面对裸机系统中的底层操作。页表修改、物理地址转换、MMIO 访问、Trap 上下文保存和进程上下文切换依然需要裸指针、内联汇编或受控的 \verb|unsafe| 代码。重构工作的重点，是把这些操作限制在相对集中的模块内；上层代码用结构体、枚举、trait 和模块边界表达资源所有权与状态转换。文件引用和 inode 引用由封装类型管理，进程状态由枚举表达，设备访问通过块设备和字符设备接口提供统一入口。
+RISC-V 将同步异常、异步中断和系统调用统一纳入 Trap 机制。当前系统在初始化阶段调用 \verb|init_trap|，将 \verb|stvec| 设置为 \verb|_trap_entry|，并通过 \verb|sscratch| 绑定当前进程的 \verb|TrapContext| 地址。此后，无论是用户态执行 \verb|ecall|、时钟中断到来，还是用户程序触发非法指令或页面异常，处理器都会跳转到同一个 Trap 入口。
 
-\begin{figure}[htbp]
-  \centering
-  \includegraphics[width=0.95\textwidth]{figures/mm-lifetime.pdf}
-  \caption{页资源生命周期管理方式对比}\label{fig:mm-lifetime}
-\end{figure}
-
-\figref{fig:mm-lifetime} 概括了 Rust 重构中较有代表性的资源管理变化。原版本中，内存块、inode 和文件对象通常以地址、指针或表项编号的形式在调用链中流转，释放动作由具体路径显式调用；当前版本把页资源、内核栈、文件引用、inode 引用和中断保护封装为带生命周期的对象，并在 \texttt{Drop} 或 guard 离开作用域时完成回收或状态恢复。C++ 同样支持 RAII，原 Unix V6++ 的实现更多服务于还原早期 Unix 的表结构和显式管理方式；本文的 Rust 重构是在平台迁移过程中重新表达资源边界，使读者在追踪进程退出、文件关闭和页回收时更容易看到资源由谁持有、何时释放。
-
-体系结构迁移需要处理 RISC-V 与 IA-32 在启动方式、中断模型和地址空间组织中的差异。重构后系统使用 RISC-V 特权架构提供的 \texttt{stvec}、\texttt{sscratch}、\texttt{sepc}、\texttt{scause}、\texttt{sstatus} 和 \texttt{satp} 等寄存器完成异常中断处理和地址空间切换\cite{riscv_privileged_20211203}；原 IA-32 的 GDT、IDT、TSS 和 8259A 相关路径则随平台迁移退出当前实现。设备访问改用 QEMU virt 平台提供的 MMIO 设备模型，通过 UART、PLIC 和 VirtIO Block 完成终端、中断控制和磁盘镜像访问\cite{qemu_riscv_doc}。
+\verb|_trap_entry| 使用裸函数和内联汇编实现。进入 Trap 后，汇编代码通过 \verb|csrrw| 交换 \verb|sscratch| 和临时寄存器，由此取得当前进程的 \verb|TrapContext| 指针。入口代码随后保存通用寄存器、\verb|sepc|、\verb|scause|、\verb|sstatus|、\verb|stval| 等状态；Trap 来自用户态时，还会切换到该进程的内核栈。上下文保存完成后，入口代码调用 Rust 层的 \verb|trap_handler| 分发事件；处理结束后恢复寄存器和控制状态，并执行 \verb|sret| 返回原执行流。
 
 \begin{figure}[htbp]
   \centering
-  \includegraphics[width=0.95\textwidth]{figures/fs-device-path.pdf}
-  \caption{文件、设备与系统调用的集成路径}\label{fig:fs-device-path}
+  \includegraphics[width=0.95\textwidth]{figures/trap-flow.pdf}
+  \caption{RISC-V Trap 入口与返回流程}\label{fig:trap-flow}
 \end{figure}
 
-\figref{fig:fs-device-path} 展示了文件、设备和系统调用的集成位置。文件系统继续提供 Unix V6++ 的超级块、inode、目录项、打开文件表和当前目录等抽象，本文不展开 inode 分配、目录项维护和缓冲区替换策略。进程管理模块依赖文件系统查找并读取 ELF 可执行文件，Shell 依赖目录和普通文件接口完成命令查找，管道与重定向依赖文件描述符复制和读写语义。块设备从 ATA/IDE 迁移到 VirtIO Block 后，上层文件接口基本保持稳定，平台差异被限制在设备适配层中。
+\figref{fig:trap-flow} 展示了这一统一入口的基本路径。原版本需要为系统调用、时钟中断、键盘中断和不同异常分别设置 IDT 表项，并在多个入口函数中保存现场、切换内核、调用处理函数、恢复现场和 \verb|iret| 返回。RISC-V 版本把入口收束到 \verb|_trap_entry|，再由 Rust 层根据 \verb|scause| 判断事件类型。入口路径集中后，异常、中断和系统调用共享同一份上下文结构，后续分发也更容易沿 \verb|TrapContext| 追踪。
 
-\section{关键设计取舍}
+上下文结构定义在 \verb|src/interrupt/context.rs| 中，包括 \verb|Registers| 和 \verb|TrapContext| 两部分。\verb|Registers| 保存通用寄存器，\verb|TrapContext| 进一步保存 \verb|sstatus|、\verb|sepc|、\verb|scause|、\verb|stval| 和 \verb|kernel_sp|。这些结构使用 \verb|#[repr(C)]| 固定内存布局，并通过 \verb|offset_of!| 生成字段偏移常量，供汇编入口保存和恢复寄存器时使用。汇编代码由此不需要手写一组与 Rust 结构重复维护的偏移数字，减少了上下文结构调整时出现不一致的风险。
 
-本课题的首要目标是完成教学操作系统面向 RISC-V 平台的可运行迁移。Unix V6++ 已有的进程、文件、inode、缓冲区和 Shell 交互等教学内容，在重构后继续保留概念模型和调用关系；与 IA-32 平台强绑定的启动、中断和设备代码，则按照 RISC-V/QEMU virt 平台重新实现。
+\section{异常与中断分发}
 
-用户态适配保留 C 语言用户库和 Shell，使用户态编程接口尽量接近原 Unix V6++ 的使用习惯。用户程序通过 RISC-V 交叉编译工具链生成 ELF64 可执行文件，内核处理 \texttt{exec} 系统调用时解析 ELF 程序头，将代码段、数据段和用户栈装入用户地址空间，并按照约定传递 \texttt{argc} 和 \texttt{argv}。用户库封装 \texttt{ecall} 指令，提供 \texttt{fork}、\texttt{execv}、\texttt{read}、\texttt{write}、\texttt{open}、\texttt{pipe}、\texttt{signal} 等接口，Shell 和常用用户程序由此获得新平台运行入口。
+进入 Rust 层后，\verb|trap_handler| 通过 \verb|TrapContext::cause| 读取 \verb|scause|，并区分中断和异常。中断类主要处理 Supervisor Timer 和 Supervisor External，异常类主要处理 Breakpoint、Illegal Instruction、User Environment Call、Instruction/Load/Store Page Fault 以及若干访问异常。这里使用枚举和模式匹配表达分发逻辑，代码按照 \verb|Trap::Interrupt|、\verb|Trap::Exception|、\verb|Interrupt::SupervisorTimer|、\verb|Exception::UserEnvCall| 等分支展开，减少裸整数常量和多层判断。
 
-运行平台选择 QEMU virt 作为主要验证环境。该平台提供 RISC-V 处理器、OpenSBI、UART、PLIC 和 VirtIO 设备，使验证过程较少受到真实硬件差异影响。Makefile 中的 \verb|qemu-riscv64| 和 \verb|qemu-riscv64g| 目标分别用于普通运行和 GDB 调试，可用于观察启动日志、Trap 上下文、进程切换和文件系统访问过程。后续章节将沿 Trap 与系统调用、进程与用户态、构建与验证三条路径展开。
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.95\textwidth]{figures/trap-dispatch.pdf}
+  \caption{中断与异常分发路径}\label{fig:trap-dispatch}
+\end{figure}
+
+对于时钟中断，系统使用 SBI timer 设置下一次时钟事件。当前实现将每秒中断次数设置为 60 次，定时器中断到来后更新用户态时间或内核态时间，增加当前进程的 CPU 使用计数，并在一秒边界更新系统时间。进程通过 \verb|sleep| 等待某个时间点时，系统会在超时后唤醒睡眠队列。时钟中断还会重新计算进程优先级，并在从用户态返回前检查是否需要调度。当前系统把抢占检查放在用户态返回边界，由 \verb|schedule_on_user_return| 触发调度，这与 Unix 风格在陷入返回点进行调度的思路保持一致。
+
+外部中断通过 PLIC 的 claim/complete 流程处理。当前主要启用 UART0 外部中断；当 PLIC 返回 UART 中断号后，内核从串口读取输入字节，并交给 TTY 层处理。TTY 层完成回显、行规程和控制字符处理，输入中断字符时还会向进程发送相应信号。处理完毕后，内核向 PLIC 写回 complete。原 IA-32 版本通过 8259A 和键盘中断入口处理输入；RISC-V/QEMU virt 版本的输入路径改为 UART、PLIC 和 TTY 的组合。
+
+异常处理依据异常来源区分用户态和内核态。用户态非法指令转换为 \verb|SIGILL|，用户态页面异常通常转换为 \verb|SIGSEGV|，访存对齐或总线类错误转换为 \verb|SIGBUS|。异常发生在内核态时，系统输出包含 \verb|scause|、\verb|sepc|、\verb|stval| 等信息的 panic 日志并停止。这一处理延续了 Unix V6++ 将用户态异常映射为信号的思路，同时利用 RISC-V 的 \verb|stval| 和 \verb|sepc| 信息提供调试线索。
+
+\section{系统调用接口}
+
+系统调用是用户程序请求内核服务的主要接口。当前用户态 C 库在 \verb|lib/src/syscall.h| 中封装了 \verb|__syscall0| 到 \verb|__syscall3| 等内联函数。系统调用号放入 \verb|a7|，参数依次放入 \verb|a0|、\verb|a1|、\verb|a2| 等寄存器，随后执行 \verb|ecall| 指令。处理完成后，返回值由内核写回 \verb|a0|。在用户库层，负返回值会通过 \verb|__syscall_ret| 转换为用户程序习惯的失败返回。
+
+内核收到 \verb|ecall| 后，在 \verb|trap_handler| 中识别 \verb|Exception::UserEnvCall|，再调用 \verb|system_call::handle_user_ecall|。该函数先检查当前进程是否有待处理信号，再将 \verb|sepc| 前进 4 字节，避免 Trap 返回后重复执行同一条 \verb|ecall|；随后从 \verb|TrapContext| 中取出系统调用参数，写入 Unix V6++ 风格的 \verb|Userspace::args|，并把 \verb|a0| 位置作为返回值写入位置。内核按照系统调用号分发到进程管理、文件系统、时间、信号等处理函数。
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.95\textwidth]{figures/syscall-path.pdf}
+  \caption{用户态到内核态的系统调用路径}\label{fig:syscall-path}
+\end{figure}
+
+\figref{fig:syscall-path} 展示了系统调用从用户态 C 库到内核处理函数再返回用户态的路径。当前系统保留了 Unix V6++ 的系统调用编号和主要语义，例如 \verb|exit|、\verb|fork|、\verb|read|、\verb|write|、\verb|open|、\verb|wait|、\verb|exec|、\verb|chdir|、\verb|sleep|、\verb|kill|、\verb|pipe| 和 \verb|signal| 等。这些调用支撑 Shell、TTY、管道和重定向路径，也是功能测试的主要对象。部分与当前平台关系不大的调用以空实现或 \verb|ENOSYS| 返回，例如若干未实现编号、\verb|trace| 和部分终端控制调用。
+
+系统调用分发方式也随体系结构变化而调整。原版本通过 \verb|SystemCallTableEntry| 表保存参数个数和函数指针，系统调用号来自 \verb|eax|，参数从 \verb|ebx| 等寄存器复制到 \verb|u.u_arg|。RISC-V 版本使用 \verb|a7| 作为系统调用号，\verb|a0| 到 \verb|a5| 作为最多六个参数，并在 Rust 中通过 \verb|match| 表达分发逻辑。表驱动和模式匹配都能完成系统调用派发；当前版本采用 \verb|match|，便于同 Rust 的枚举、错误返回和模块函数调用结合，也便于在编译期检查分支书写是否符合类型约束。
+
+系统调用处理中的错误返回沿用了 Unix 风格。内核内部以 \verb|PosixError| 表示错误原因，返回用户态时将错误码取负后写入 \verb|a0|。文件描述符无效、权限不足、找不到文件、系统调用未实现等情况，都通过统一的错误枚举返回。对于沿用原 Unix V6++ 文件系统处理习惯的函数，当前代码提供 \verb|trap_ret| 和 \verb|trap_void| 包装函数，将 \verb|Userspace::error| 转换为 Rust 的 \verb|KResult|。该处理保留已有 Unix V6 风格流程，也使新写的 Rust 代码可以使用 \verb|Result| 表达成功或失败。
