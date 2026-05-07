@@ -1,61 +1,90 @@
-\chapter{中断、异常与系统调用实现}\label{chap:trap-syscall}
+\chapter{进程管理与用户程序支持}\label{chap:proc-user}
 
-中断、异常与系统调用决定内核响应事件的方式。用户程序通过系统调用主动进入内核，硬件设备通过外部中断通知内核，处理器异常则要求内核判断错误来源并处理。原 IA-32/C++ 版本 Unix V6++ 依赖 IDT、8259A、x86 中断栈帧和多组入口宏完成这些工作；RISC-V/Rust 重构版本改用 RISC-V 特权架构中的 \verb|stvec|、\verb|sscratch|、\verb|sepc|、\verb|scause|、\verb|stval| 和 \verb|sstatus| 等寄存器组织 Trap 框架\cite{riscv_privileged_20211203}。
+进程管理把前文讨论的地址空间、Trap 机制和系统调用接口连到一起，也是用户最容易观察到内核行为的部分。用户向 Shell 输入命令后，内核需要创建进程、切换上下文、装入可执行文件、维护父子关系，并在程序结束或收到信号时回收资源。Unix V6++ 原 IA-32/C++ 版本保留了早期 Unix 的进程状态机、\verb|sleep|/\verb|wakeup|、\verb|fork|/\verb|exec|/\verb|wait| 等核心语义；当前 RISC-V/Rust 版本以保持这些语义为基础，重写了与体系结构、地址空间和资源生命周期密切相关的实现。
 
-本章围绕当前系统中的 Trap 入口、上下文保存、中断异常分发和系统调用处理展开，并结合原 IA-32/C++ 版本说明实现方式的变化。Rust 对类型化上下文、模式匹配和错误返回表达的影响，也会在相关路径中一并讨论。
+本章围绕进程模型与调度、进程生命周期、ELF 用户程序加载和信号机制展开。文件系统和内存管理已有独立工作，本章只说明进程实现需要的接口关系，重点讨论进程控制块、上下文切换、用户程序启动和用户态异常处理。
 
-\section{Trap 处理总体框架}
+\section{进程模型与调度}
 
-RISC-V 将同步异常、异步中断和系统调用统一纳入 Trap 机制。当前系统在初始化阶段调用 \verb|init_trap|，将 \verb|stvec| 设置为 \verb|_trap_entry|，并通过 \verb|sscratch| 绑定当前进程的 \verb|TrapContext| 地址。此后，无论是用户态执行 \verb|ecall|、时钟中断到来，还是用户程序触发非法指令或页面异常，处理器都会跳转到同一个 Trap 入口。
+当前系统中的进程控制块定义在 \verb|src/proc/process.rs|。其主体结构 \verb|Process| 保留了 Unix V6++ 的核心字段：\verb|pid|、\verb|ppid|、用户标识、进程状态、优先级、CPU 使用计数、睡眠通道、信号信息以及打开文件、当前目录等进程私有状态所在的 \verb|Userspace| 关联关系。进程状态仍采用 \verb|SNULL|、\verb|SSLEEP|、\verb|SWAIT|、\verb|SRUN|、\verb|SIDL|、\verb|SZOMB| 和 \verb|SSTOP| 等名称，与原系统和 Unix V6 的教学语义保持一致\cite{arpaci2019ostep,xv6_book_2023}。这种保留使学生在阅读重构后代码时，仍能把实验现象与经典教材中的进程状态转换对应起来。
 
-\verb|_trap_entry| 使用裸函数和内联汇编实现。进入 Trap 后，汇编代码通过 \verb|csrrw| 交换 \verb|sscratch| 和临时寄存器，由此取得当前进程的 \verb|TrapContext| 指针。入口代码随后保存通用寄存器、\verb|sepc|、\verb|scause|、\verb|sstatus|、\verb|stval| 等状态；Trap 来自用户态时，还会切换到该进程的内核栈。上下文保存完成后，入口代码调用 Rust 层的 \verb|trap_handler| 分发事件；处理结束后恢复寄存器和控制状态，并执行 \verb|sret| 返回原执行流。
+进程表的组织方式与原 \verb|main| 分支不同。原版本在 \verb|ProcessManager| 中维护固定长度的 \verb|process[NPROC]| 数组，空闲项通过 \verb|p_stat == SNULL| 标识；当前版本使用 \verb|Vec<Box<Process>>| 保存已存在的进程，创建新进程时分配一个 \verb|Box<Process>|，父进程 \verb|wait| 到僵尸子进程后直接从向量中移除。固定数组接近早期 Unix 的实现方式，便于展示进程槽位的概念；当前实现把进程对象、内核栈和用户页之间的所有权关系写入类型结构。子进程被回收时，\verb|Box| 被移除并触发内部字段析构，配合 \verb|KernelStack|、\verb|TextRef| 等类型，减少状态已清空但资源仍需手动释放的中间步骤。
 
-\begin{figure}[htbp]
-  \centering
-  \includegraphics[width=0.95\textwidth]{figures/trap-flow.pdf}
-  \caption{RISC-V Trap 入口与返回流程}\label{fig:trap-flow}
-\end{figure}
-
-\figref{fig:trap-flow} 展示了这一统一入口的基本路径。原版本需要为系统调用、时钟中断、键盘中断和不同异常分别设置 IDT 表项，并在多个入口函数中保存现场、切换内核、调用处理函数、恢复现场和 \verb|iret| 返回。RISC-V 版本把入口收束到 \verb|_trap_entry|，再由 Rust 层根据 \verb|scause| 判断事件类型。入口路径集中后，异常、中断和系统调用共享同一份上下文结构，后续分发也更容易沿 \verb|TrapContext| 追踪。
-
-上下文结构定义在 \verb|src/interrupt/context.rs| 中，包括 \verb|Registers| 和 \verb|TrapContext| 两部分。\verb|Registers| 保存通用寄存器，\verb|TrapContext| 进一步保存 \verb|sstatus|、\verb|sepc|、\verb|scause|、\verb|stval| 和 \verb|kernel_sp|。这些结构使用 \verb|#[repr(C)]| 固定内存布局，并通过 \verb|offset_of!| 生成字段偏移常量，供汇编入口保存和恢复寄存器时使用。汇编代码由此不需要手写一组与 Rust 结构重复维护的偏移数字，减少了上下文结构调整时出现不一致的风险。
-
-\section{异常与中断分发}
-
-进入 Rust 层后，\verb|trap_handler| 通过 \verb|TrapContext::cause| 读取 \verb|scause|，并区分中断和异常。中断类主要处理 Supervisor Timer 和 Supervisor External，异常类主要处理 Breakpoint、Illegal Instruction、User Environment Call、Instruction/Load/Store Page Fault 以及若干访问异常。这里使用枚举和模式匹配表达分发逻辑，代码按照 \verb|Trap::Interrupt|、\verb|Trap::Exception|、\verb|Interrupt::SupervisorTimer|、\verb|Exception::UserEnvCall| 等分支展开，减少裸整数常量和多层判断。
+RISC-V 下的进程切换由 \verb|TaskContext| 和 \verb|ProcessManager::switch_to| 配合完成。\verb|TaskContext| 保存被调用者保存寄存器 \verb|s0| 到 \verb|s11|、内核栈指针 \verb|sp|、返回地址 \verb|ra| 和 \verb|sstatus|。切换时，内核先通过 \verb|IrqGuard::disable_save| 关闭中断，切换当前 \verb|Userspace| 窗口和用户页表映射，更新 \verb|sscratch| 为目标进程的 \verb|TrapContext| 地址，随后执行汇编函数 \verb|TaskContext::switch|，保存当前内核执行流并恢复目标进程的内核执行流。\verb|IrqGuard| 将底层中断开关操作封装为带生命周期的对象，离开作用域时恢复中断状态，调用者无需在多条错误路径中重复书写恢复逻辑\cite{rust_reference}。
 
 \begin{figure}[htbp]
   \centering
-  \includegraphics[width=0.95\textwidth]{figures/trap-dispatch.pdf}
-  \caption{中断与异常分发路径}\label{fig:trap-dispatch}
+  \includegraphics[width=0.95\textwidth]{figures/process-scheduler.pdf}
+  \caption{进程调度与上下文切换路径}\label{fig:process-scheduler}
 \end{figure}
 
-对于时钟中断，系统使用 SBI timer 设置下一次时钟事件。当前实现将每秒中断次数设置为 60 次，定时器中断到来后更新用户态时间或内核态时间，增加当前进程的 CPU 使用计数，并在一秒边界更新系统时间。进程通过 \verb|sleep| 等待某个时间点时，系统会在超时后唤醒睡眠队列。时钟中断还会重新计算进程优先级，并在从用户态返回前检查是否需要调度。当前系统把抢占检查放在用户态返回边界，由 \verb|schedule_on_user_return| 触发调度，这与原 Unix 风格在陷入返回点进行调度的思路保持一致。
+\figref{fig:process-scheduler} 展示了当前调度路径。0 号进程仍承担调度器角色，\verb|ProcessManager::schedule| 在循环中调用 \verb|select| 选择可运行进程。\verb|select| 跳过非 \verb|SRUN|、未装入内存或系统进程标记不合适的进程，并选择优先级数值最小的进程运行。当前实现使用 \verb|LAST_IDX| 记录上一次选择位置，并从下一项开始环形搜索，避免每次都从进程表开头扫描。时钟中断周期性更新进程的 \verb|cpu|、\verb|time| 和优先级，并在从用户态返回前检查 \verb|runrun| 标志；若需要重新调度，则切换到 0 号进程，再由调度器选择下一个目标进程。
 
-外部中断通过 PLIC 的 claim/complete 流程处理。当前主要启用 UART0 外部中断；当 PLIC 返回 UART 中断号后，内核从串口读取输入字节，并交给 TTY 层处理。TTY 层完成回显、行规程和控制字符处理，输入中断字符时还会向进程发送相应信号。处理完毕后，内核向 PLIC 写回 complete。原 IA-32 版本通过 8259A 和键盘中断入口处理输入；RISC-V/QEMU virt 版本的输入路径改为 UART、PLIC 和 TTY 的组合。
+原 IA-32/C++ 版本的切换过程依赖 \verb|SaveU|、\verb|RetU|、\verb|SwtchUStruct| 等宏保存 \verb|esp|、\verb|ebp| 并修改内核页表中的用户区映射，还需要处理 TSS、段选择子和 x86 中断返回栈帧。当前 RISC-V 版本去掉了 IA-32 的 TSS 和分段机制，转而依赖 \verb|satp| 对应的页表、\verb|sscratch| 中保存的上下文指针以及 \verb|sret| 返回用户态。Unix 风格调度策略本身保持稳定，体系结构相关部分则收束到少量 RISC-V 汇编和上下文结构中，进程调度的主体逻辑保留在 Rust 函数中。
 
-异常处理依据异常来源区分用户态和内核态。用户态非法指令转换为 \verb|SIGILL|，用户态页面异常通常转换为 \verb|SIGSEGV|，访存对齐或总线类错误转换为 \verb|SIGBUS|。异常发生在内核态时，系统输出包含 \verb|scause|、\verb|sepc|、\verb|stval| 等信息的 panic 日志并停止。这一处理延续了 Unix V6++ 将用户态异常映射为信号的思路，同时利用 RISC-V 的 \verb|stval| 和 \verb|sepc| 信息提供调试线索。
+睡眠与唤醒机制沿用了 Unix 风格的通道模型。当前系统将等待对象抽象为 \verb|Channel| trait，只要能转为一个稳定地址，就可以作为睡眠通道。进程进入不可中断睡眠时使用 \verb|SSLEEP|，进入可被信号打断的用户睡眠时使用 \verb|SWAIT|；\verb|wakeup_all| 扫描进程集合，将处于对应通道睡眠状态的进程重新置为 \verb|SRUN|。管道、缓冲区、TTY 读等待和定时睡眠都会复用这一模型，但接口层面只暴露通道地址和优先级，便于教学中追踪等待关系。
 
-\section{系统调用接口}
+\section{进程生命周期管理}
 
-系统调用是用户程序请求内核服务的主要接口。当前用户态 C 库在 \verb|lib/src/syscall.h| 中封装了 \verb|__syscall0| 到 \verb|__syscall3| 等内联函数。系统调用号放入 \verb|a7|，参数依次放入 \verb|a0|、\verb|a1|、\verb|a2| 等寄存器，随后执行 \verb|ecall| 指令。处理完成后，返回值由内核写回 \verb|a0|。在用户库层，负返回值会通过 \verb|__syscall_ret| 转换为用户程序习惯的失败返回。
+用户进程的主要生命周期由 \verb|fork|、\verb|exec|、\verb|exit| 和 \verb|wait| 串联。当前系统保留 Unix 中先复制当前进程、再在子进程中执行新程序的模型。Shell 启动外部命令时先调用 \verb|fork| 创建子进程，子进程通过 \verb|execv| 替换为目标程序，父进程根据是否为后台任务决定是否调用 \verb|wait| 等待子进程结束。这个路径支撑命令执行，也支撑管道、重定向和文件描述符复制。
 
-内核收到 \verb|ecall| 后，在 \verb|trap_handler| 中识别 \verb|Exception::UserEnvCall|，再调用 \verb|system_call::handle_user_ecall|。该函数先检查当前进程是否有待处理信号，再将 \verb|sepc| 前进 4 字节，避免 Trap 返回后重复执行同一条 \verb|ecall|；随后从 \verb|TrapContext| 中取出系统调用参数，写入 Unix V6++ 风格的 \verb|Userspace::args|，并把 \verb|a0| 位置作为返回值写入位置。内核按照系统调用号分发到进程管理、文件系统、时间、信号等处理函数。
+\verb|fork| 的实现位于 \verb|ProcessManager::fork|。内核先调用 \verb|new_proc| 创建子进程控制块，并复制父进程的用户区描述、打开文件状态、当前目录、文本段引用等信息。用户地址空间采用实际内存复制；系统为子进程分配新的用户页，把父进程当前驻留的用户数据复制到新页中，然后为子进程建立独立映射。暂时不能分配足够用户页时，系统沿用 Unix V6++ 中已有的交换区路径，将子进程图像写入交换区并设置 \verb|SSWAP| 标志。该实现保持 \verb|fork| 语义，在 RISC-V 页表和 Rust 资源模型下重新表达父子进程从同一执行点分叉的效果。
 
 \begin{figure}[htbp]
   \centering
-  \includegraphics[width=0.95\textwidth]{figures/syscall-path.pdf}
-  \caption{用户态到内核态的系统调用路径}\label{fig:syscall-path}
+  \includegraphics[width=0.95\textwidth]{figures/process-lifecycle.pdf}
+  \caption{fork、exec、exit 与 wait 的生命周期关系}\label{fig:process-lifecycle}
 \end{figure}
 
-\figref{fig:syscall-path} 展示了系统调用从用户态 C 库到内核处理函数再返回用户态的路径。当前系统保留了 Unix V6++ 的系统调用编号和主要语义，例如 \verb|exit|、\verb|fork|、\verb|read|、\verb|write|、\verb|open|、\verb|wait|、\verb|exec|、\verb|chdir|、\verb|sleep|、\verb|kill|、\verb|pipe| 和 \verb|signal| 等。这些调用支撑第 6 章中的 Shell、TTY、管道和重定向路径，也是第 7 章功能测试的主要对象。部分与当前平台关系不大的调用以空实现或 \verb|ENOSYS| 返回，例如若干未实现编号、\verb|trace| 和部分终端控制调用。
+为了让子进程从 \verb|fork| 返回值为 0 的位置继续执行，当前系统在 \verb|set_fork_return_context| 中复制父进程保存的 \verb|TrapContext|，将子进程的内核入口设置为 \verb|fork_ret|，并把子进程上下文中的 \verb|a0| 置为 0。父进程直接从系统调用返回，返回值为子进程 pid。原 C++ 版本通过 \verb|NewProc| 和 \verb|Swtch| 的返回路径区分父子进程，父进程路径返回 0，子进程被调度恢复后返回 1，再由 \verb|Fork| 设置不同的 \verb|EAX| 返回值。当前版本同样满足接口约定，只是把返回差异直接写入 RISC-V 的 \verb|TrapContext|，与系统调用 ABI 的关系更清楚。
 
-系统调用分发方式也随体系结构变化而调整。原版本通过 \verb|SystemCallTableEntry| 表保存参数个数和函数指针，系统调用号来自 \verb|eax|，参数从 \verb|ebx| 等寄存器复制到 \verb|u.u_arg|。RISC-V 版本使用 \verb|a7| 作为系统调用号，\verb|a0| 到 \verb|a5| 作为最多六个参数，并在 Rust 中通过 \verb|match| 表达分发逻辑。表驱动和模式匹配都能完成系统调用派发；当前版本采用 \verb|match|，便于同 Rust 的枚举、错误返回和模块函数调用结合，也便于在编译期检查分支书写是否符合类型约束。
+\verb|exec| 负责将当前进程替换为新的用户程序。它通过文件系统路径查找 inode，检查执行权限和普通文件属性，并用 \verb|ELFParser| 解析可执行文件。解析成功后，内核更新 \verb|Userspace::mem| 中的 \verb|text|、\verb|data|、\verb|stack| 等布局信息，释放旧文本段引用，扩展进程图像，建立新的用户页表映射，再把 ELF 的可装入段写入用户空间。随后，内核从传入的 \verb|argv| 指针复制参数字符串，在用户栈顶按 RISC-V ABI 习惯构造 \verb|argc| 和 \verb|argv|，并调用 \verb|prepare_user_context| 设置 \verb|sepc|、用户栈指针以及 \verb|a0|、\verb|a1|。Trap 返回执行 \verb|sret| 后，进程从新程序入口开始运行。
 
-\section{错误返回与信号处理}
+进程退出时，\verb|Process::exit| 会清空信号处理函数，关闭打开文件，释放当前目录引用，显式释放 \verb|Userspace| 中堆分配的用户页表数组，释放文本段和用户页，将状态置为 \verb|SZOMB|，唤醒父进程并把仍以自己为父的子进程转交给 1 号进程。该路径保留了 Unix V6++ 的处理顺序，同时把若干资源释放写成对象所有权转移。例如 \verb|proc.text.take()| 会减少文本段引用，\verb|pages.take()| 后交还用户页管理器，父进程 \verb|wait| 时移除 \verb|Box<Process>|，内核栈随进程对象一并回收。原版本在 \verb|Exit| 中逐项清空字段、释放内存、把进程槽改回可用；当前实现减少了对象仍存在但逻辑已失效的中间状态。
 
-系统调用处理中的错误返回沿用了 Unix 风格。内核内部以 \verb|PosixError| 表示错误原因，返回用户态时将错误码取负后写入 \verb|a0|。文件描述符无效、权限不足、找不到文件、系统调用未实现等情况，都通过统一的错误枚举返回。对于沿用原 Unix V6++ 文件系统处理习惯的函数，当前代码提供 \verb|trap_ret| 和 \verb|trap_void| 包装函数，将 \verb|Userspace::error| 转换为 Rust 的 \verb|KResult|。该处理保留已有 Unix V6 风格流程，也使新写的 Rust 代码可以使用 \verb|Result| 表达成功或失败。
+\verb|wait| 的实现会扫描进程集合，查找父 pid 等于当前进程 pid 的子进程。如果发现 \verb|SZOMB| 子进程，返回其 pid 并移除该进程对象；如果存在子进程但尚未退出，则当前进程睡眠到自身地址对应的通道；如果不存在子进程，则返回 \verb|ECHILD|。原 C++ 版本会从交换区读回子进程退出时保存的 \verb|User| 结构，以统计子进程时间并取出退出码。当前版本已经保留了等待和回收的主体语义，但对子进程时间累计和退出状态保存仍较简化，这也是后续可完善之处。
 
-信号处理贯穿异常、终端输入和系统调用返回路径。系统调用进入前，如果当前进程已有待处理信号，内核会优先构造信号处理上下文并返回 \verb|EINTR|；系统调用完成后，内核还会进行复查。时钟中断和异常处理也会在合适位置检查当前进程是否需要处理信号。对于用户自定义处理函数，内核保存当前 \verb|TrapContext| 到用户栈，将 \verb|sepc| 改为用户态 handler 地址，并设置返回地址为用户态信号返回跳板。处理函数结束后，用户程序通过 \verb|sigret| 恢复先前被打断的现场。
+\section{ELF 用户程序加载}
 
-Rust 重构没有消除所有 \verb|unsafe| 代码。Trap 入口、用户指针读取、信号上下文压栈和系统调用 ABI 都涉及底层内存操作。当前实现把这些边界集中到少数位置，分发、错误转换、信号判断和调度检查则放到类型化的 Rust 函数中。相较原版本中的多组入口宏和手工寄存器约定，这种写法更便于定位一次 Trap 的完整路径。
+当前系统的用户态程序以 ELF64/RISC-V 可执行文件形式存在，内核加载器位于 \verb|src/loader/mod.rs|。加载器读取 ELF 头，检查魔数、64 位格式、小端编码、可执行文件类型、RISC-V 机器类型以及程序头大小等字段；随后读取程序头表，筛选 \verb|PT_LOAD| 段，并按照虚拟地址排序。加载器根据 ELF 规范中的程序头和可装入段组织进程图像\cite{tis_elf_1995}，再结合当前系统的用户空间上限划分文本段、数据段、默认栈大小以及入口地址。如果段布局越过用户空间上限，则加载失败并向系统调用返回错误。
+
+这一实现与原 \verb|main| 分支的工作重心不同。原版本主要通过 \verb|PEParser| 支持用户态程序，同时保留了一个面向 32 位 x86 ELF 的探索性加载器；其中部分地址转换依赖 \verb|0xC0000000| 这样的 IA-32 内核映射常量，段布局也与当时工具链生成的 PE 文件结构关系较紧。当前版本把 ELF64/RISC-V 作为主要用户程序格式，直接读取程序头，避免依赖节名顺序，并把入口地址、段权限和用户空间边界检查集中在 \verb|ELFParser| 中。该处理适应交叉编译生成的 RISC-V 用户程序，也便于和 QEMU virt 平台上的调试流程配合。
+
+装入阶段由 \verb|ELFParser::relocate| 完成。对于每个需要装入的段，内核先把目标内存区清零，再从 inode 中按文件偏移读取段内容。文本段在正常运行时映射为只读、可执行；装入时若需要写入文本页，加载器会临时打开对应页表项的写权限，写入完成后再去掉写权限并刷新 TLB。这个过程仍涉及底层指针写入和页表位修改，因而不可避免地使用 \verb|unsafe|；不过，段描述、权限判断和边界计算被放在普通 Rust 结构和方法中，底层操作的范围比较集中。
+
+\begin{table}[htbp]
+  \centering
+  \caption{用户程序加载相关实现对比}\label{tab:loader-before-after}
+  \renewcommand{\arraystretch}{1.25}
+  \begin{tabular}{p{0.27\textwidth}p{0.31\textwidth}p{0.31\textwidth}}
+    \toprule
+    对比项 & main 分支 IA-32/C++ 版本 & 当前 RISC-V/Rust 版本 \\
+    \midrule
+    主要程序格式 & 以 PE 用户程序为主，ELF 加载器为补充实现 & 以 ELF64/RISC-V 可执行文件为主 \\
+    用户入口 & 通过 x86 Trap 返回栈帧和运行时入口进入用户态 & 通过 \verb|TrapContext| 设置 \verb|sepc|、\verb|a0|、\verb|a1| 后 \verb|sret| 进入用户态 \\
+    段装载依据 & 与 PE 节表及特定布局关系较紧 & 依据 ELF Program Header 的 \verb|PT_LOAD| 段 \\
+    地址相关常量 & 包含 IA-32 内核高地址映射相关假设 & 使用 RISC-V 用户空间上限、页表项权限和 TLB 刷新接口 \\
+    参数传递 & 在切换新图像前备份并重建用户栈 & 在 Rust \verb|Stack| 辅助结构中构造 \verb|argc/argv| \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+用户栈构造发生在 \verb|exec| 成功后、进入新程序前。当前系统用一个小型 \verb|Stack| 辅助结构从 \verb|MemoryDescriptor::USER_SPACE_END| 向低地址压入参数字符串和指针数组。参数字符串按逆序复制，字符串写入后进行 16 字节对齐，再压入空指针、各参数指针，最终得到 \verb|argc| 与 \verb|argv|。随后，\verb|prepare_user_context| 将 \verb|a0| 设置为 \verb|argc|，将 \verb|a1| 设置为 \verb|argv| 指针，并把 \verb|sepc| 设置为 ELF 入口。用户态的 \verb|crt0.c| 负责设置全局指针并调用 \verb|main1|，程序返回后通过系统调用 \verb|exit| 结束。
+
+\section{信号机制}
+
+信号机制把异常处理、终端输入和进程控制连接在一起。当前系统在 \verb|constants.rs| 中定义 \verb|Signal| 枚举，在 \verb|Process| 中使用 \verb|Option<Signal>| 表示待处理信号，在 \verb|Userspace| 中保存每个信号号对应的用户态处理函数地址。用户程序通过 \verb|signal| 系统调用安装处理函数，通过 \verb|kill| 系统调用向指定进程或同一终端上的进程组发送信号；终端层在收到控制字符时也会调用进程管理器发送 \verb|SIGINT|、\verb|SIGQUIT| 或 \verb|SIGTSTP|。
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.95\textwidth]{figures/signal-delivery.pdf}
+  \caption{信号产生、递送与返回流程}\label{fig:signal-delivery}
+\end{figure}
+
+\figref{fig:signal-delivery} 给出了信号处理的主要路径。信号可以来自用户程序调用 \verb|kill|、TTY 读入控制字符后向相关进程发送信号，也可以来自异常处理模块对用户态非法指令、访问异常或页面异常的转换。信号写入 \verb|pending_signal| 后，内核会在系统调用入口、系统调用返回后、时钟中断返回前以及异常处理结束等边界调用 \verb|should_process|。若信号需要处理，\verb|process_signal| 取出用户注册的处理函数地址；未安装处理函数时，进程按默认方式结束。
+
+原 C++ 版本中，进程控制块使用 \verb|p_sig| 记录一个待处理信号，\verb|User::u_signal| 保存处理函数地址，\verb|PSig| 于用户态返回前改写 x86 Trap 上下文中的 \verb|eip| 和 \verb|esp|。当前版本保留单个待处理信号和用户态处理函数表的基本模型，但把信号号从裸整数改成 \verb|Signal| 枚举，并通过 \verb|TryFrom<u32>| 对用户传入的信号号进行范围检查。系统调用入口仍接受传统整数 ABI，内核内部处理时则避免把任意整数直接当作有效信号使用。
+
+当用户安装了处理函数时，内核会把当前 \verb|TrapContext| 复制到用户栈上，然后修改当前上下文，使 \verb|sepc| 指向用户处理函数，\verb|ra| 指向用户空间第 0x10 处的信号返回跳板，用户栈指针下移到保存的上下文位置。这个跳板由内核在用户页表第 0 页映射一页只读、可执行的代码，其中包含设置系统调用号并执行 \verb|ecall| 的短指令序列。处理函数返回后进入 \verb|SIGRET| 系统调用，内核从用户栈读取先前保存的 \verb|TrapContext| 并恢复，使用户程序回到被信号打断前的位置。
+
+该实现延续了 Unix 式信号异步产生、在安全边界递送的基本特征，也体现出 RISC-V/Rust 重构后的变化。信号递送直接操作 \verb|TrapContext|，省去了 x86 专用的 \verb|eip|、段寄存器和 \verb|eflags| 栈帧；默认处理、用户处理和 \verb|sigret| 恢复都通过明确的函数路径表达；信号处理函数表跟随 \verb|Userspace|，在 \verb|exec| 后清空，避免新程序继承旧程序的处理函数地址。当前信号实现仍是教学内核级别的简化模型，例如未实现完整的信号屏蔽字和多个排队信号，但已经可以支撑终端中断、用户自定义处理函数和常见异常到信号的转换。

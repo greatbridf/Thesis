@@ -1,8 +1,8 @@
 \chapter{系统总体设计}\label{chap:system-design}
 
-Unix V6++ 的 RISC-V/Rust 重构没有采用对 C++ 源文件逐句翻译的方式。本文在保留 Unix V6++ 教学语义的基础上，重新适配 RISC-V 平台的启动方式、特权级机制、地址空间组织、设备模型和用户程序 ABI。本章从原系统结构、当前系统架构和迁移方案三个层面梳理这些关系，后续章节再分别讨论启动、Trap、进程、设备交互和构建验证。
+Unix V6++ 的 RISC-V/Rust 重构没有采用对 C++ 源文件逐句翻译的方式。本文在保留 Unix V6++ 教学语义的基础上，重新适配 RISC-V 平台的启动方式、特权级机制、地址空间组织、设备模型和用户程序 ABI。本章从重构前系统、当前系统架构和迁移取舍三个层面说明总体方案，内存管理和文件系统只在支撑整机运行的范围内展开。
 
-\section{原 Unix V6++ 系统分析}
+\section{重构前系统分析}
 
 重构前的 Unix V6++ 面向 IA-32 平台，内核主体采用 C++ 语言实现。其整体结构延续 Unix V6 的设计思想，以进程、文件、inode、缓冲区、设备和系统调用为核心抽象，同时通过 C++ 类对各个模块进行封装。该版本能够在传统 PC 仿真环境中运行，并通过引导扇区、保护模式初始化、中断描述符表、页表、ATA 磁盘驱动和终端设备等机制完成一个小型 Unix-like 系统所需的基本功能。
 
@@ -10,7 +10,7 @@ Unix V6++ 的 RISC-V/Rust 重构没有采用对 C++ 源文件逐句翻译的方�
 
 移植时，原系统也暴露出较强的平台耦合。启动代码依赖 IA-32 实模式到保护模式的切换；中断处理依赖 GDT、IDT、8259A 等 PC 平台机制；块设备访问依赖 ATA/IDE 设备模型；用户程序格式和运行约定也与原平台紧密相关。若希望将 Unix V6++ 迁移到 RISC-V 教学平台，仅保留上层接口是不够的，必须重新设计体系结构相关层，并调整内核模块之间的边界。
 
-\section{重构后系统总体架构}
+\section{重构后系统架构}
 
 重构后的系统以 RISC-V 64 位平台为目标，运行环境选用 QEMU virt 机器和 OpenSBI。内核主体采用 Rust 语言实现，用户态库、Shell 和常用用户程序仍使用 C 语言编写，并通过 RISC-V 交叉工具链编译为 ELF64/RISC-V 可执行文件。系统运行时由 QEMU 加载内核，内核完成初始化后创建初始进程，加载用户态 Shell，最终形成可交互的教学操作系统环境。
 
@@ -26,14 +26,13 @@ Unix V6++ 的 RISC-V/Rust 重构没有采用对 C++ 源文件逐句翻译的方�
   \centering
   \caption{重构前后系统结构对比}\label{tab:system-before-after}
   \renewcommand{\arraystretch}{1.35}
-  \begin{tabular}{p{3cm}p{5.2cm}p{5.2cm}}
+  \begin{tabular}{p{0.2\textwidth}p{0.34\textwidth}p{0.34\textwidth}}
     \toprule
-    \textbf{比较维度} & \textbf{重构前系统} & \textbf{重构后系统} \\
+    比较维度 & 重构前系统 & 重构后系统 \\
     \midrule
     目标平台 & IA-32 传统 PC 平台 & RISC-V 64 位 QEMU virt 平台 \\
     内核语言 & C++ 为主，汇编用于启动和上下文切换 & Rust 为主，少量汇编用于 Trap 入口和上下文切换 \\
     启动方式 & 引导扇区加载内核，完成实模式到保护模式切换 & QEMU/OpenSBI 加载内核，进入 RISC-V Rust 入口 \\
-    内存管理 & IA-32 页表与平台相关地址布局 & Sv39 页表、内核高地址映射、用户页表和 MMIO 映射 \\
     中断机制 & IDT、8259A、时钟与键盘/磁盘中断 & \texttt{stvec}、SBI timer、PLIC 和 UART 外部中断 \\
     块设备 & ATA/IDE 磁盘访问 & VirtIO Block 设备访问磁盘镜像 \\
     用户程序 & 原平台可执行文件与用户库 & ELF64/RISC-V 用户程序、C 用户库和 Shell \\
@@ -50,18 +49,28 @@ Unix V6++ 的 RISC-V/Rust 重构没有采用对 C++ 源文件逐句翻译的方�
 
 Rust 内核仍需面对裸机系统中的底层操作。页表修改、物理地址转换、MMIO 访问、Trap 上下文保存和进程上下文切换依然需要裸指针、内联汇编或受控的 \verb|unsafe| 代码。重构工作的重点，是把这些操作限制在相对集中的模块内；上层代码用结构体、枚举、trait 和模块边界表达资源所有权与状态转换。文件引用和 inode 引用由封装类型管理，进程状态由枚举表达，设备访问通过块设备和字符设备接口提供统一入口。
 
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.95\textwidth]{figures/mm-lifetime.pdf}
+  \caption{页资源生命周期管理方式对比}\label{fig:mm-lifetime}
+\end{figure}
+
+\figref{fig:mm-lifetime} 概括了 Rust 重构中较有代表性的资源管理变化。原版本中，内存块、inode 和文件对象通常以地址、指针或表项编号的形式在调用链中流转，释放动作由具体路径显式调用；当前版本把页资源、内核栈、文件引用、inode 引用和中断保护封装为带生命周期的对象，并在 \texttt{Drop} 或 guard 离开作用域时完成回收或状态恢复。C++ 同样支持 RAII，原 Unix V6++ 的实现更多服务于还原早期 Unix 的表结构和显式管理方式；本文的 Rust 重构是在平台迁移过程中重新表达资源边界，使读者在追踪进程退出、文件关闭和页回收时更容易看到资源由谁持有、何时释放。
+
 体系结构迁移需要处理 RISC-V 与 IA-32 在启动方式、中断模型和地址空间组织中的差异。重构后系统使用 RISC-V 特权架构提供的 \texttt{stvec}、\texttt{sscratch}、\texttt{sepc}、\texttt{scause}、\texttt{sstatus} 和 \texttt{satp} 等寄存器完成异常中断处理和地址空间切换\cite{riscv_privileged_20211203}；原 IA-32 的 GDT、IDT、TSS 和 8259A 相关路径则随平台迁移退出当前实现。设备访问改用 QEMU virt 平台提供的 MMIO 设备模型，通过 UART、PLIC 和 VirtIO Block 完成终端、中断控制和磁盘镜像访问\cite{qemu_riscv_doc}。
 
-用户态适配保留 C 语言用户库和 Shell，使用户态编程接口尽量接近原 Unix V6++ 的使用习惯。用户程序通过 RISC-V 交叉编译工具链生成 ELF64 可执行文件，内核处理 \texttt{exec} 系统调用时解析 ELF 程序头，将代码段、数据段和用户栈装入用户地址空间，并按照约定传递 \texttt{argc} 和 \texttt{argv}。用户库封装 \texttt{ecall} 指令，提供 \texttt{fork}、\texttt{execv}、\texttt{read}、\texttt{write}、\texttt{open}、\texttt{pipe}、\texttt{signal} 等接口，Shell 和常用用户程序由此获得新平台运行入口。
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.95\textwidth]{figures/fs-device-path.pdf}
+  \caption{文件、设备与系统调用的集成路径}\label{fig:fs-device-path}
+\end{figure}
+
+\figref{fig:fs-device-path} 展示了文件、设备和系统调用的集成位置。文件系统继续提供 Unix V6++ 的超级块、inode、目录项、打开文件表和当前目录等抽象，本文不展开 inode 分配、目录项维护和缓冲区替换策略。进程管理模块依赖文件系统查找并读取 ELF 可执行文件，Shell 依赖目录和普通文件接口完成命令查找，管道与重定向依赖文件描述符复制和读写语义。块设备从 ATA/IDE 迁移到 VirtIO Block 后，上层文件接口基本保持稳定，平台差异被限制在设备适配层中。
 
 \section{关键设计取舍}
 
-本课题的首要目标是完成教学操作系统面向 RISC-V 平台的可运行迁移。设计取舍主要围绕核心语义保留、实现复杂度控制和后续教学扩展展开。Unix V6++ 已有的进程、文件、inode、缓冲区和 Shell 交互等教学内容，在重构后继续保留概念模型和调用关系；与 IA-32 平台强绑定的启动、中断和设备代码，则按照 RISC-V/QEMU virt 平台重新实现。
+本课题的首要目标是完成教学操作系统面向 RISC-V 平台的可运行迁移。Unix V6++ 已有的进程、文件、inode、缓冲区和 Shell 交互等教学内容，在重构后继续保留概念模型和调用关系；与 IA-32 平台强绑定的启动、中断和设备代码，则按照 RISC-V/QEMU virt 平台重新实现。
 
-内核模块划分保留教学内核所需的直接性。进程管理模块维护进程表、调度状态和上下文切换，文件接口围绕 inode、打开文件表和缓冲区展开，设备模块通过块设备和字符设备抽象支撑文件系统和 TTY。这样的边界便于在论文和实验中追踪一次系统调用路径：从用户态进入 Trap，经过进程和文件对象，必要时等待设备 I/O，最后回到 Shell。
+用户态适配保留 C 语言用户库和 Shell，使用户态编程接口尽量接近原 Unix V6++ 的使用习惯。用户程序通过 RISC-V 交叉编译工具链生成 ELF64 可执行文件，内核处理 \texttt{exec} 系统调用时解析 ELF 程序头，将代码段、数据段和用户栈装入用户地址空间，并按照约定传递 \texttt{argc} 和 \texttt{argv}。用户库封装 \texttt{ecall} 指令，提供 \texttt{fork}、\texttt{execv}、\texttt{read}、\texttt{write}、\texttt{open}、\texttt{pipe}、\texttt{signal} 等接口，Shell 和常用用户程序由此获得新平台运行入口。
 
-运行平台选择 QEMU virt 作为主要验证环境。该平台提供 RISC-V 处理器、OpenSBI、UART、PLIC 和 VirtIO 设备，使验证过程较少受到真实硬件差异影响。Makefile 中的 \verb|qemu-riscv64| 和 \verb|qemu-riscv64g| 目标分别用于普通运行和 GDB 调试，可用于观察启动日志、Trap 上下文、进程切换和文件系统访问过程。
-
-功能边界聚焦于单机教学内核的基本运行路径。当前系统可以启动，建立地址空间和异常中断处理，运行用户态程序，通过系统调用访问文件和创建进程，并通过终端与 Shell 交互。更复杂的性能优化和内核功能扩展列入后续研究方向，本文主体集中于跨体系结构移植、Rust 重构和可运行验证。
-
-重构后系统形成了以 RISC-V 平台机制为底层基础、以 Rust 内核模块为主体、以 Unix V6++ 教学语义为上层目标的结构。后续章节将分别围绕启动与内存管理、中断与系统调用、进程管理、文件系统与设备、构建测试等内容展开说明。
+运行平台选择 QEMU virt 作为主要验证环境。该平台提供 RISC-V 处理器、OpenSBI、UART、PLIC 和 VirtIO 设备，使验证过程较少受到真实硬件差异影响。Makefile 中的 \verb|qemu-riscv64| 和 \verb|qemu-riscv64g| 目标分别用于普通运行和 GDB 调试，可用于观察启动日志、Trap 上下文、进程切换和文件系统访问过程。后续章节将沿 Trap 与系统调用、进程与用户态、构建与验证三条路径展开。

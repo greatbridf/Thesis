@@ -29,7 +29,7 @@
 
 % 内容简述（请用300字以内简要概述）
 \infoabstract{%
-本文研究 Unix V6++ 教学操作系统面向 RISC-V 平台的移植与 Rust 重构。重构前系统以 IA-32/C++/PC 设备模型为基础，当前系统运行于 QEMU virt 与 OpenSBI 环境，内核主体采用 Rust 实现，用户态 C 程序交叉编译为 ELF64/RISC-V 可执行文件。论文围绕启动、Sv39 地址空间、Trap、系统调用、进程管理、ELF 加载、信号、VirtIO 块设备、UART/TTY 和 Shell 交互展开，文件系统和内存管理主要作为运行支撑条件处理。系统已覆盖构建、镜像生成和 QEMU 交互测试流程，并保留 Unix V6++ 的主要教学语义。
+本文研究 Unix V6++ 教学操作系统面向 RISC-V 平台的移植与 Rust 重构。重构前系统以 IA-32/C++/PC 设备模型为基础，当前系统运行于 QEMU virt 与 OpenSBI 环境，内核主体采用 Rust 实现，用户态 C 程序交叉编译为 ELF64/RISC-V 可执行文件。论文压缩为五章，重点围绕 RISC-V 启动与 Trap、系统调用、进程管理、ELF 加载、信号、TTY/Shell 交互和 QEMU 测试展开，文件系统和内存管理主要作为运行支撑条件处理。系统已覆盖构建、镜像生成和交互验证流程，并保留 Unix V6++ 的主要教学语义。
 }
 
 % 毕业设计：图纸数量与正文字数（成果类型为 design 或 engineering 时填写，两者须同时填写）
@@ -37,7 +37,7 @@
 % \infowordcount{15000}
 
 % 毕业论文：正文总字数（成果类型为 thesis 时填写）
-\infothesiswords{12345}
+\infothesiswords{17800}
 
 % 随附资料（每条用 \item 开头；不填则显示空白行）
 \infomaterials{
