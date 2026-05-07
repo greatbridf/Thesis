@@ -34,25 +34,25 @@ MIT 的 xv6 是当前国际上应用较广的 Unix-like 教学操作系统。xv6
 
 Rust 语言近年来逐渐进入系统软件开发领域。Rust 通过所有权、生命周期和类型检查等机制，不依赖垃圾回收即可提供内存安全能力\cite{rust_reference}。已有 Rust 内核研究也表明，内核仍需保留少量受控的 unsafe 抽象，但类型系统可以帮助收束资源管理和隔离边界\cite{levy_kernel_rust_2017}。内核开发仍需处理裸机启动、外设访问、页表修改和上下文切换等底层操作，无法完全避免 unsafe 代码；但 Rust 的模块系统、枚举、模式匹配和 trait 有助于表达复杂状态和抽象边界。对于教学内核而言，Rust 保留了接近硬件的控制能力，也能减少空指针、悬垂引用和资源释放错误给代码阅读带来的额外负担。
 
-\section{研究内容与工作范围}
+\section{研究内容与边界}
 
-本文围绕 Unix V6++ 的 RISC-V 移植与 Rust 重构展开。工作范围包括 RISC-V 启动入口、Sv39 地址空间、Trap 与系统调用、进程管理、ELF64/RISC-V 用户程序加载、信号机制、VirtIO 块设备、UART/TTY、Shell 交互、用户态构建链和 QEMU 验证流程。相较重构前的 \verb|main| 分支，当前系统的变化集中在体系结构、实现语言和运行环境三个方面：IA-32 转为 RISC-V，C++ 内核转为 Rust 内核，传统 PC 设备模型转为 QEMU virt、OpenSBI、PLIC、UART 和 VirtIO 组成的仿真平台。
+本文围绕 Unix V6++ 的 RISC-V 移植与 Rust 重构展开。研究内容包括 RISC-V 启动入口、Sv39 地址空间、Trap 与系统调用、进程管理、ELF64/RISC-V 用户程序加载、信号机制、VirtIO 块设备、UART/TTY、Shell 交互、用户态构建链和 QEMU 验证流程。相较重构前的 \verb|main| 分支，当前系统的变化集中在体系结构、实现语言和运行环境三个方面：IA-32 转为 RISC-V，C++ 内核转为 Rust 内核，传统 PC 设备模型转为 QEMU virt、OpenSBI、PLIC、UART 和 VirtIO 组成的仿真平台。
 
-这些工作并非简单替换编译目标。RISC-V 和 IA-32 在启动方式、中断入口、特权寄存器、页表格式、外设模型和用户态 ABI 上均存在差异；内核语言从 C++ 改为 Rust 后，进程对象、页资源、文件引用、inode 引用、中断保护和错误返回也需要重新表达。本文不把所有模块均等展开，而选择更能体现移植难度和工作量的路径深入分析：第 2 章讨论 RISC-V 启动、Trap 和系统调用，第 3 章讨论进程生命周期、ELF 加载和信号，第 4 章专门比较重构前后的实现差异并归纳本次工作的亮点。文件系统和内存管理已有独立工作，本文只在这些路径需要时说明其接口作用。
+这些内容并非简单替换编译目标。RISC-V 和 IA-32 在启动方式、中断入口、特权寄存器、页表格式、外设模型和用户态 ABI 上均存在差异；内核语言从 C++ 改为 Rust 后，进程对象、页资源、文件引用、inode 引用、中断保护和错误返回也需要重新表达。本文不把所有模块均等展开，而选择体系结构迁移中牵涉路径较长、接口边界较多的部分深入分析：第 2 章讨论 RISC-V 启动、Trap 和系统调用，第 3 章讨论进程生命周期、ELF 加载和信号，第 4 章专门比较重构前后的实现差异并归纳本次迁移的主要特点。文件系统和内存管理已有独立研究，本文只在这些路径需要时说明其接口作用。
 
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=0.95\textwidth]{figures/work-scope-map.pdf}
-  \caption{本文工作范围与重点展开对象}\label{fig:work-scope-map}
+  \caption{本文研究边界与重点展开对象}\label{fig:work-scope-map}
 \end{figure}
 
 \begin{table}[htbp]
   \centering
-  \caption{本文工作内容与章节展开关系}\label{tab:work-scope}
+  \caption{本文研究内容与章节展开关系}\label{tab:work-scope}
   \renewcommand{\arraystretch}{1.32}
   \begin{tabular}{p{0.23\textwidth}p{0.43\textwidth}p{0.22\textwidth}}
     \toprule
-    工作内容 & 当前系统中的结果 & 正文处理方式 \\
+    研究内容 & 当前系统中的结果 & 正文处理方式 \\
     \midrule
     RISC-V 平台基础 & OpenSBI 入口、Sv39 映射、PLIC、UART、VirtIO Block & 第 1、2 章作为基础说明 \\
     Trap 与系统调用 & 统一入口、上下文保存、系统调用参数传递和错误返回 & 第 2 章重点展开 \\

@@ -14,7 +14,7 @@
   \renewcommand{\arraystretch}{1.32}
   \begin{tabular}{p{0.25\textwidth}p{0.63\textwidth}}
     \toprule
-    阶段 & 主要工作 \\
+    阶段 & 主要任务 \\
     \midrule
     QEMU 加载内核 & 将内核 ELF 加载到 \verb|0x80200000|，并准备 virt 平台设备环境 \\
     OpenSBI 转交控制权 & 完成机器模式基础初始化，将 hart 编号和设备树地址传给内核 \\
@@ -29,7 +29,7 @@
 
 RISC-V 64 位平台常用 Sv39 分页模式。Sv39 使用三级页表，虚拟地址被划分为多级索引和页内偏移，页表项中包含有效位、读写执行权限、用户位、全局位、访问位和脏位等标志\cite{riscv_unprivileged_20191213,riscv_privileged_20211203}。当前系统在 \verb|src/machine/page_table.rs| 中定义 \verb|PageDirectory|、\verb|PageDirectoryEntry|、\verb|PageTable| 和 \verb|PageTableEntry| 等结构，用 Rust 类型对页表项编码、权限标志和页表数组进行封装。系统建立低地址用户映射入口、物理内存恒等映射、内核高地址映射和 MMIO 映射，并通过 \verb|satp| 与 \verb|sfence.vma| 使新的地址翻译规则生效。
 
-启动阶段的边界与原 IA-32 版本不同。原版本需要在汇编中完成 BIOS 入口、磁盘扇区读取、GDT 设置、保护模式切换和跳转到高地址内核等步骤；重构后，机器模式下的大部分平台初始化由 OpenSBI 承担，内核侧的早期汇编主要集中在设置栈和跳转到 Rust 入口。启动阶段的工作重点由 PC 启动细节转向链接布局、页表建立和 Rust 裸机运行环境。
+启动阶段的边界与原 IA-32 版本不同。原版本需要在汇编中完成 BIOS 入口、磁盘扇区读取、GDT 设置、保护模式切换和跳转到高地址内核等步骤；重构后，机器模式下的大部分平台初始化由 OpenSBI 承担，内核侧的早期汇编主要集中在设置栈和跳转到 Rust 入口。启动阶段的关注点由 PC 启动细节转向链接布局、页表建立和 Rust 裸机运行环境。
 
 \section{Trap 处理总体框架}
 
