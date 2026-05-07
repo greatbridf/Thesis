@@ -1,12 +1,15 @@
 \chapter{重构对比与实现亮点}\label{chap:refactor-highlights}
 
-第 2、3 章分别讨论了 RISC-V 平台机制和进程用户态路径，本章从重构对比的角度说明本次工作的工作量与亮点。这里的比较不是评价两种语言或两代实现的优劣，而是说明平台迁移和语言重构带来的具体工程变化。重构前的 \verb|main| 分支已经提供了可用于教学的 Unix V6++ 内核；当前工作要解决的问题，是让这套教学语义在 RISC-V/QEMU virt 平台、Rust 内核和 ELF64/RISC-V 用户态环境中重新连通。
+第 2、3 章分别讨论了 RISC-V
+平台机制和进程用户态路径，本章从重构对比的角度说明本次工作的工作量与亮点，说明平台迁移和语言重构带来的具体工程变化。重构前的 \verb|main| 分支已经提供了可用于教学的 Unix V6++ 内核；当前工作要解决的问题，是让这套教学语义在 RISC-V/QEMU virt 平台、Rust 内核和 ELF64/RISC-V 用户态环境中重新连通。
 
 \section{跨体系结构迁移的工作量}
 
 Unix V6++ 从 IA-32 迁移到 RISC-V 时，最先改变的是内核与硬件之间的契约。原系统的启动路径依赖引导扇区、实模式到保护模式切换、GDT、IDT、TSS、8259A 和 ATA/IDE 等传统 PC 机制；当前系统则经由 QEMU virt 与 OpenSBI 进入内核，使用 \verb|stvec|、\verb|sscratch|、\verb|scause|、\verb|sepc|、\verb|sstatus|、\verb|satp|、PLIC、UART 和 VirtIO Block 组织运行环境。两者之间没有直接的一一替换关系，启动代码、链接脚本、页表布局、中断入口、外设访问和用户态返回路径都需要重新建立。
 
-从源码变化看，重构工作覆盖了内核主体、用户库、构建脚本和镜像工具。原 \verb|src/kernel/|、\verb|src/machine/|、\verb|src/interrupt/|、\verb|src/proc/|、\verb|src/dev/|、\verb|src/fs/| 等 C++ 模块被 Rust 模块重新表达；用户态 C 库新增 RISC-V 系统调用封装和启动入口；顶层 Makefile 需要同时组织 Cargo、RISC-V 交叉 GCC、链接脚本、文件系统镜像生成和 QEMU 运行目标。工作量的主要来源并不在某一个函数的翻译，而在多个边界同时移动：体系结构边界、语言边界、设备边界、用户程序 ABI 边界和构建边界需要同时闭合。
+从源码变化看，重构工作覆盖了内核主体、用户库、构建脚本和镜像工具。原
+\verb|src/kernel/|、\verb|src/machine/|、\verb|src/interrupt/|、\verb|src/proc/|、\verb|src/dev/|、\verb|src/fs/|
+等 C++ 模块被 Rust 模块重新表达；用户态 C 库新增 RISC-V 系统调用封装和启动入口；顶层 Makefile 需要同时组织 Cargo、RISC-V 交叉 GCC、链接脚本、文件系统镜像生成和 QEMU 运行目标。我们的工作除了对函数的翻译以外，还有在多个边界同时移动：体系结构边界、语言边界、设备边界、用户程序 ABI 边界和构建边界需要同时闭合。
 
 \begin{figure}[htbp]
   \centering
@@ -18,13 +21,13 @@ Unix V6++ 从 IA-32 迁移到 RISC-V 时，最先改变的是内核与硬件之�
 
 \section{RISC-V 重构的亮点}
 
-RISC-V 重构的第一处亮点，是把原先分散在 IA-32 平台机制中的入口路径收束到 RISC-V 特权架构的统一 Trap 模型。原系统中系统调用、时钟中断、键盘中断和异常分别依赖 IDT 表项和不同入口代码；当前系统通过 \verb|_trap_entry| 保存统一的 \verb|TrapContext|，再在 Rust 层根据 \verb|scause| 分发中断、异常和系统调用。这样做并不是减少了底层复杂性，而是让事件入口和上下文结构更集中，学生可以沿同一个结构观察用户态进入内核、内核处理事件、再通过 \verb|sret| 返回用户态的完整过程。
+在我们的 RISC-V 重构中，首先我们把原先分散在 IA-32 平台机制中的入口路径收束到了 RISC-V 特权架构的统一 Trap 模型。原系统中系统调用、时钟中断、键盘中断和异常分别依赖 IDT 表项和不同入口代码；当前系统通过 \verb|_trap_entry| 保存统一的 \verb|TrapContext|，再在 Rust 层根据 \verb|scause| 分发中断、异常和系统调用。这样做并不是减少了底层复杂性，而是让事件入口和上下文结构更集中，学生可以沿同一个结构观察用户态进入内核、内核处理事件、再通过 \verb|sret| 返回用户态的完整过程。
 
-第二处亮点，是用户态 ABI 的整体替换。原用户程序格式和 x86 调用约定不能直接用于 RISC-V。当前系统重建了 C 用户库中的 \verb|ecall| 封装，使用 \verb|a7| 传递系统调用号，使用 \verb|a0| 到 \verb|a5| 传递参数和返回值；内核在 \verb|exec| 中解析 ELF64/RISC-V 程序头，装入 \verb|PT_LOAD| 段，构造 \verb|argc/argv| 用户栈，并设置 \verb|sepc|、用户栈指针和参数寄存器。由此，用户态 Shell 和常用命令不只是被重新编译，而是获得了与 RISC-V 内核 Trap 返回路径一致的运行入口。
+其次，我们进行了用户态 ABI 的整体替换。原用户程序格式和 x86 调用约定不能直接用于 RISC-V。当前系统重建了 C 用户库中的 \verb|ecall| 封装，使用 \verb|a7| 传递系统调用号，使用 \verb|a0| 到 \verb|a5| 传递参数和返回值；内核在 \verb|exec| 中解析 ELF64/RISC-V 程序头，装入 \verb|PT_LOAD| 段，构造 \verb|argc/argv| 用户栈，并设置 \verb|sepc|、用户栈指针和参数寄存器。由此，用户态 Shell 和常用命令不只是被重新编译，而是获得了与 RISC-V 内核 Trap 返回路径一致的运行入口。
 
-第三处亮点，是设备模型的迁移没有破坏 Unix 风格文件接口。原系统面向 ATA/IDE、键盘和显示输出路径，当前系统面向 UART、PLIC 和 VirtIO Block。设备层变化较大，但上层仍通过字符设备、块设备、缓冲区、inode 和文件描述符访问资源。Shell 读取终端、普通程序读写文件、管道和重定向仍使用统一的系统调用接口。这样的处理使硬件平台变化能够在教学中被清楚观察，同时不会要求用户态程序直接感知 VirtIO 或 PLIC 的细节。
+除此以外，设备模型的迁移也没有破坏 Unix 风格文件接口。原系统面向 ATA/IDE、键盘和显示输出路径，当前系统面向 UART、PLIC 和 VirtIO Block。设备层变化较大，但上层仍通过字符设备、块设备、缓冲区、inode 和文件描述符访问资源。Shell 读取终端、普通程序读写文件、管道和重定向仍使用统一的系统调用接口。这样的处理使硬件平台变化能够在教学中被清楚观察，同时不会要求用户态程序直接感知 VirtIO 或 PLIC 的细节。
 
-\section{Rust 重构的亮点}
+\section{Rust 重构带来的特性及其意义}
 
 Rust 重构的意义主要体现在资源边界表达上。内核仍然必须保留 \verb|unsafe|：页表项修改、MMIO 访问、裸指针读写、Trap 入口和上下文切换都无法完全交给安全抽象。但当前实现把这些操作限制在较集中的模块内，并用 Rust 类型表达上层对象之间的所有权关系。页资源被封装为 \verb|KernelPages|、\verb|UserPages|，进程内核栈由 \verb|KernelStack| 持有，文件和 inode 引用由 \verb|FileRef|、\verb|InodeRef| 管理，中断开关由 \verb|IrqGuard| 在作用域结束时恢复。
 
@@ -42,9 +45,7 @@ Rust 重构的意义主要体现在资源边界表达上。内核仍然必须保
 
 \section{保留教学语义的取舍}
 
-本次重构没有把 Unix V6++ 改写成另一个完全不同的教学系统。进程状态名称、\verb|sleep|/\verb|wakeup|、\verb|fork|/\verb|exec|/\verb|wait|、inode、文件描述符、TTY、Shell 和常用命令仍然保留，学生仍可以从 Shell 命令和系统调用现象进入内核。变化主要发生在这些语义的底层承载方式上：x86 Trap 栈帧换成 RISC-V \verb|TrapContext|，PE/原平台程序换成 ELF64/RISC-V 程序，ATA/IDE 换成 VirtIO Block，显式资源释放路径更多转为 Rust 类型的生命周期边界。
-
-这种取舍使论文可以避免写成面面俱到的软件说明书。文件系统和内存管理在当前系统中很重要，但不是本文的主要贡献；本文只在进程、系统调用、设备交互和资源生命周期需要时说明它们的接口作用。更值得展开的是几个迁移难点：第一，RISC-V 特权架构下的启动、Trap 和系统调用路径；第二，进程生命周期与 ELF 用户程序加载；第三，Rust 类型系统如何服务于内核资源边界。它们共同体现了本次工作的主要工作量，也构成当前系统相较 \verb|main| 分支最明显的变化。
+本次重构没有把 Unix V6++ 改写成另一个完全不同的教学系统。进程状态名称、\verb|sleep|/\verb|wakeup|、\verb|fork|/\verb|exec|/\verb|wait|、inode、文件描述符、TTY、Shell 和常用命令仍然保留，学生仍可以从 Shell 命令和系统调用现象进入内核。变化主要发生在这些语义的底层承载方式上：x86 Trap 栈帧换成 RISC-V \verb|TrapContext|，PE/原平台程序换成 ELF64/RISC-V 程序，ATA/IDE 换成 VirtIO Block，显式资源释放路径更多转为 Rust 类型的生命周期边界。这样看似“不完美”的重构，避免了项目与原先设计偏差过大，造成语义差异，并因此导致学生理解的困难，以及教学上的不便。我们相信，比起大刀阔斧的全部重构，更值得展开的是几个迁移难点：第一，RISC-V 特权架构下的启动、Trap 和系统调用路径；第二，进程生命周期与 ELF 用户程序加载；第三，Rust 类型系统如何服务于内核资源边界。它们共同体现了本次工作的重点，是本工作与原设计相比最主要的变化。
 
 \section{当前实现的边界}
 
