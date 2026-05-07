@@ -3,43 +3,43 @@
   <diagram name="Page-1">
     <mxGraphModel dx="1422" dy="794" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
       <root>
-        <mxCell id="0" />
+        <mxCell id="0" style="fontSize=14;">
         <mxCell id="1" parent="0" />
         <mxCell id="2" value="原 IA-32/C++ 版本&lt;br&gt;显式分配与释放" style="swimlane;html=1;startSize=34;rounded=0;whiteSpace=wrap;fillColor=#f8fafc;strokeColor=#64748b;fontColor=#0f172a;fontStyle=1;strokeWidth=1.5;" vertex="1" parent="1">
           <mxGeometry x="40" y="40" width="500" height="380" as="geometry" />
         </mxCell>
-        <mxCell id="3" value="RISC-V/Rust 重构版本&lt;br&gt;所有权与 RAII 式回收" style="swimlane;html=1;startSize=34;rounded=0;whiteSpace=wrap;fillColor=#f0fdf4;strokeColor=#16a34a;fontColor=#052e16;fontStyle=1;strokeWidth=1.5;" vertex="1" parent="1">
+        <mxCell id="3" value="RISC-V/Rust 重构版本&lt;br&gt;所有权与 RAII 式回收" style="swimlane;html=1;startSize=34;rounded=0;whiteSpace=wrap;fillColor=#f0fdf4;strokeColor=#16a34a;fontColor=#052e16;fontStyle=1;strokeWidth=1.5;fontSize=14;" vertex="1" parent="1">
           <mxGeometry x="620" y="40" width="500" height="380" as="geometry" />
         </mxCell>
-        <mxCell id="4" value="AllocMemory(size)&lt;br&gt;返回起始地址" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontColor=#172554;arcSize=8;strokeWidth=1.5;" vertex="1" parent="2">
+        <mxCell id="4" value="AllocMemory(size)&lt;br&gt;返回起始地址" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontColor=#172554;arcSize=8;strokeWidth=1.5;fontSize=14;" vertex="1" parent="2">
           <mxGeometry x="55" y="70" width="170" height="62" as="geometry" />
         </mxCell>
-        <mxCell id="5" value="调用方保存&lt;br&gt;地址 + 长度" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0f2fe;strokeColor=#0284c7;fontColor=#082f49;arcSize=8;strokeWidth=1.5;" vertex="1" parent="2">
+        <mxCell id="5" value="调用方保存&lt;br&gt;地址 + 长度" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0f2fe;strokeColor=#0284c7;fontColor=#082f49;arcSize=8;strokeWidth=1.5;fontSize=14;" vertex="1" parent="2">
           <mxGeometry x="275" y="70" width="170" height="62" as="geometry" />
         </mxCell>
-        <mxCell id="6" value="显式调用&lt;br&gt;FreeMemory" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#d97706;fontColor=#451a03;arcSize=8;strokeWidth=1.5;" vertex="1" parent="2">
+        <mxCell id="6" value="显式调用&lt;br&gt;FreeMemory" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#d97706;fontColor=#451a03;arcSize=8;strokeWidth=1.5;fontSize=14;" vertex="1" parent="2">
           <mxGeometry x="55" y="205" width="170" height="62" as="geometry" />
         </mxCell>
-        <mxCell id="7" value="Allocator 更新&lt;br&gt;MapNode 空闲块表" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fee2e2;strokeColor=#dc2626;fontColor=#450a0a;arcSize=8;strokeWidth=1.5;" vertex="1" parent="2">
+        <mxCell id="7" value="Allocator 更新&lt;br&gt;MapNode 空闲块表" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fee2e2;strokeColor=#dc2626;fontColor=#450a0a;arcSize=8;strokeWidth=1.5;fontSize=14;" vertex="1" parent="2">
           <mxGeometry x="275" y="205" width="170" height="62" as="geometry" />
         </mxCell>
-        <mxCell id="8" value="KernelPages::alloc(order)&lt;br&gt;返回拥有者对象" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#16a34a;fontColor=#052e16;arcSize=8;strokeWidth=1.5;" vertex="1" parent="3">
-          <mxGeometry x="55" y="70" width="185" height="62" as="geometry" />
+        <mxCell id="8" value="KernelPages::alloc(order)&lt;br&gt;返回拥有者对象" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#16a34a;fontColor=#052e16;arcSize=8;strokeWidth=1.5;fontSize=14;" vertex="1" parent="3">
+          <mxGeometry x="55" y="70" width="185" height="77" as="geometry" />
         </mxCell>
-        <mxCell id="9" value="对象持有&lt;br&gt;PhysPage 句柄" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ccfbf1;strokeColor=#0d9488;fontColor=#042f2e;arcSize=8;strokeWidth=1.5;" vertex="1" parent="3">
+        <mxCell id="9" value="对象持有&lt;br&gt;PhysPage 句柄" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ccfbf1;strokeColor=#0d9488;fontColor=#042f2e;arcSize=8;strokeWidth=1.5;fontSize=14;" vertex="1" parent="3">
           <mxGeometry x="285" y="70" width="170" height="62" as="geometry" />
         </mxCell>
-        <mxCell id="10" value="生命周期结束&lt;br&gt;触发 Drop" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#ca8a04;fontColor=#422006;arcSize=8;strokeWidth=1.5;" vertex="1" parent="3">
+        <mxCell id="10" value="生命周期结束&lt;br&gt;触发 Drop" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#ca8a04;fontColor=#422006;arcSize=8;strokeWidth=1.5;fontSize=14;" vertex="1" parent="3">
           <mxGeometry x="55" y="205" width="185" height="62" as="geometry" />
         </mxCell>
-        <mxCell id="11" value="Buddy 分配器&lt;br&gt;回收页帧" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;fontColor=#2e1065;arcSize=8;strokeWidth=1.5;" vertex="1" parent="3">
+        <mxCell id="11" value="Buddy 分配器&lt;br&gt;回收页帧" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;fontColor=#2e1065;arcSize=8;strokeWidth=1.5;fontSize=14;" vertex="1" parent="3">
           <mxGeometry x="285" y="205" width="170" height="62" as="geometry" />
         </mxCell>
-        <mxCell id="12" value="资源边界主要由&lt;br&gt;调用约定维护" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f1f5f9;strokeColor=#94a3b8;fontColor=#334155;dashed=1;" vertex="1" parent="2">
-          <mxGeometry x="95" y="310" width="310" height="45" as="geometry" />
+        <mxCell id="12" value="资源边界主要由&lt;br&gt;调用约定维护" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f1f5f9;strokeColor=#94a3b8;fontColor=#334155;dashed=1;fontSize=14;" vertex="1" parent="2">
+          <mxGeometry x="95" y="310" width="310" height="58" as="geometry" />
         </mxCell>
-        <mxCell id="13" value="资源边界进入类型系统&lt;br&gt;释放路径随生命周期收束" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#86efac;fontColor=#14532d;dashed=1;" vertex="1" parent="3">
-          <mxGeometry x="95" y="310" width="310" height="45" as="geometry" />
+        <mxCell id="13" value="资源边界进入类型系统&lt;br&gt;释放路径随生命周期收束" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#86efac;fontColor=#14532d;dashed=1;fontSize=14;" vertex="1" parent="3">
+          <mxGeometry x="95" y="310" width="310" height="58" as="geometry" />
         </mxCell>
         <mxCell id="14" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#475569;strokeWidth=1.5;" edge="1" parent="2" source="4" target="5">
           <mxGeometry relative="1" as="geometry" />
