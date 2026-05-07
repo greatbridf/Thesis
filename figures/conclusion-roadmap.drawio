@@ -2,7 +2,7 @@
   <diagram id="conclusion-roadmap" name="成果与展望">
     <mxGraphModel dx="1394" dy="862" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1280" pageHeight="720" math="0" shadow="0">
       <root>
-        <mxCell id="0"/>
+        <mxCell id="0" style="fontSize=14;">
         <mxCell id="1" parent="0"/>
         <mxCell id="title" value="Unix V6++ RISC-V/Rust 移植与重构成果闭环" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=24;fontStyle=1;fontColor=#1F2937;" vertex="1" parent="1">
           <mxGeometry x="210" y="30" width="860" height="40" as="geometry"/>
@@ -28,22 +28,22 @@
         <mxCell id="future" value="后续完善方向&#xa;自动化测试体系&#xa;异常与压力场景覆盖&#xa;系统调用语义补全&#xa;更多设备与实验文档" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=#F8FAFC;strokeColor=#64748B;fontSize=15;fontColor=#1F2937;spacing=12;" vertex="1" parent="1">
           <mxGeometry x="1000" y="270" width="220" height="150" as="geometry"/>
         </mxCell>
-        <mxCell id="e1" value="迁移目标" style="endArrow=block;html=1;rounded=0;strokeColor=#4D6B8A;fontSize=13;fontColor=#374151;" edge="1" parent="1" source="before" target="core">
+        <mxCell id="e1" value="迁移目标" style="endArrow=block;html=1;rounded=0;strokeColor=#4D6B8A;fontSize=14;fontColor=#374151;" edge="1" parent="1" source="before" target="core">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e2" value="支撑" style="endArrow=block;html=1;rounded=0;strokeColor=#B7791F;fontSize=13;fontColor=#374151;" edge="1" parent="1" source="boot" target="core">
+        <mxCell id="e2" value="支撑" style="endArrow=block;html=1;rounded=0;strokeColor=#B7791F;fontSize=14;fontColor=#374151;" edge="1" parent="1" source="boot" target="core">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e3" value="支撑" style="endArrow=block;html=1;rounded=0;strokeColor=#A94A4A;fontSize=13;fontColor=#374151;" edge="1" parent="1" source="trap" target="core">
+        <mxCell id="e3" value="支撑" style="endArrow=block;html=1;rounded=0;strokeColor=#A94A4A;fontSize=14;fontColor=#374151;" edge="1" parent="1" source="trap" target="core">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e4" value="形成用户态运行" style="endArrow=block;html=1;rounded=0;strokeColor=#3F7F82;fontSize=13;fontColor=#374151;" edge="1" parent="1" source="proc" target="core">
+        <mxCell id="e4" value="形成用户态运行" style="endArrow=block;html=1;rounded=0;strokeColor=#3F7F82;fontSize=14;fontColor=#374151;" edge="1" parent="1" source="proc" target="core">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e5" value="形成交互闭环" style="endArrow=block;html=1;rounded=0;strokeColor=#73519B;fontSize=13;fontColor=#374151;" edge="1" parent="1" source="shell" target="core">
+        <mxCell id="e5" value="形成交互闭环" style="endArrow=block;html=1;rounded=0;strokeColor=#73519B;fontSize=14;fontColor=#374151;" edge="1" parent="1" source="shell" target="core">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e6" value="验证后继续扩展" style="endArrow=block;html=1;rounded=0;strokeColor=#64748B;fontSize=13;fontColor=#374151;" edge="1" parent="1" source="core" target="future">
+        <mxCell id="e6" value="验证后继续扩展" style="endArrow=block;html=1;rounded=0;strokeColor=#64748B;fontSize=14;fontColor=#374151;" edge="1" parent="1" source="core" target="future">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
       </root>

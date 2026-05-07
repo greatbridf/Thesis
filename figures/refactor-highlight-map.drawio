@@ -2,51 +2,51 @@
   <diagram name="refactor-highlight-map" id="refactor-highlight-map">
     <mxGraphModel dx="1200" dy="760" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1160" pageHeight="760" math="0" shadow="0">
       <root>
-        <mxCell id="0"/>
+        <mxCell id="0" style="fontSize=14;">
         <mxCell id="1" parent="0"/>
         <mxCell id="old-title" value="重构前 main 分支" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eef2ff;strokeColor=#4f46e5;fontSize=16;fontStyle=1;" vertex="1" parent="1">
           <mxGeometry x="60" y="40" width="230" height="50" as="geometry"/>
         </mxCell>
         <mxCell id="work-title" value="迁移与重构工作" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#334155;fontSize=16;fontStyle=1;" vertex="1" parent="1">
-          <mxGeometry x="465" y="40" width="230" height="50" as="geometry"/>
+          <mxGeometry x="465" y="40" width="230" height="52" as="geometry"/>
         </mxCell>
         <mxCell id="new-title" value="当前 RISC-V/Rust 系统" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ecfdf5;strokeColor=#059669;fontSize=16;fontStyle=1;" vertex="1" parent="1">
-          <mxGeometry x="865" y="40" width="230" height="50" as="geometry"/>
+          <mxGeometry x="865" y="40" width="230" height="52" as="geometry"/>
         </mxCell>
-        <mxCell id="old-boot" value="IA-32 启动&#xa;引导扇区、保护模式、GDT" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#94a3b8;fontSize=13;" vertex="1" parent="1">
+        <mxCell id="old-boot" value="IA-32 启动&#xa;引导扇区、保护模式、GDT" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#94a3b8;fontSize=14;" vertex="1" parent="1">
           <mxGeometry x="60" y="130" width="230" height="64" as="geometry"/>
         </mxCell>
-        <mxCell id="old-trap" value="x86 中断路径&#xa;IDT、8259A、iret 栈帧" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#94a3b8;fontSize=13;" vertex="1" parent="1">
+        <mxCell id="old-trap" value="x86 中断路径&#xa;IDT、8259A、iret 栈帧" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#94a3b8;fontSize=14;" vertex="1" parent="1">
           <mxGeometry x="60" y="230" width="230" height="64" as="geometry"/>
         </mxCell>
-        <mxCell id="old-resource" value="显式资源管理&#xa;调用点配对释放、表项状态" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#94a3b8;fontSize=13;" vertex="1" parent="1">
+        <mxCell id="old-resource" value="显式资源管理&#xa;调用点配对释放、表项状态" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#94a3b8;fontSize=14;" vertex="1" parent="1">
           <mxGeometry x="60" y="330" width="230" height="64" as="geometry"/>
         </mxCell>
-        <mxCell id="old-user" value="原用户态约定&#xa;PE/IA-32 入口、旧构建链" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#94a3b8;fontSize=13;" vertex="1" parent="1">
+        <mxCell id="old-user" value="原用户态约定&#xa;PE/IA-32 入口、旧构建链" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#94a3b8;fontSize=14;" vertex="1" parent="1">
           <mxGeometry x="60" y="430" width="230" height="64" as="geometry"/>
         </mxCell>
-        <mxCell id="work-boot" value="重新建立平台边界&#xa;链接脚本、OpenSBI 入口、Sv39、MMIO" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#2563eb;fontSize=13;" vertex="1" parent="1">
+        <mxCell id="work-boot" value="重新建立平台边界&#xa;链接脚本、OpenSBI 入口、Sv39、MMIO" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#2563eb;fontSize=14;" vertex="1" parent="1">
           <mxGeometry x="440" y="120" width="280" height="76" as="geometry"/>
         </mxCell>
-        <mxCell id="work-trap" value="重写 Trap 与 ABI&#xa;TrapContext、ecall、a0-a7、sret" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0f9ff;strokeColor=#0284c7;fontSize=13;" vertex="1" parent="1">
+        <mxCell id="work-trap" value="重写 Trap 与 ABI&#xa;TrapContext、ecall、a0-a7、sret" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0f9ff;strokeColor=#0284c7;fontSize=14;" vertex="1" parent="1">
           <mxGeometry x="440" y="220" width="280" height="76" as="geometry"/>
         </mxCell>
-        <mxCell id="work-resource" value="收束 unsafe 与资源边界&#xa;Drop、RAII guard、Result、枚举状态" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff7ed;strokeColor=#ea580c;fontSize=13;" vertex="1" parent="1">
+        <mxCell id="work-resource" value="收束 unsafe 与资源边界&#xa;Drop、RAII guard、Result、枚举状态" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff7ed;strokeColor=#ea580c;fontSize=14;" vertex="1" parent="1">
           <mxGeometry x="440" y="320" width="280" height="76" as="geometry"/>
         </mxCell>
-        <mxCell id="work-user" value="重建用户态闭环&#xa;ELF64/RISC-V、C 用户库、Shell、镜像" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fdf4ff;strokeColor=#a21caf;fontSize=13;" vertex="1" parent="1">
+        <mxCell id="work-user" value="重建用户态闭环&#xa;ELF64/RISC-V、C 用户库、Shell、镜像" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fdf4ff;strokeColor=#a21caf;fontSize=14;" vertex="1" parent="1">
           <mxGeometry x="440" y="420" width="280" height="76" as="geometry"/>
         </mxCell>
-        <mxCell id="new-boot" value="QEMU virt 平台可启动&#xa;OpenSBI 到 Rust 内核入口" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#10b981;fontSize=13;" vertex="1" parent="1">
+        <mxCell id="new-boot" value="QEMU virt 平台可启动&#xa;OpenSBI 到 Rust 内核入口" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#10b981;fontSize=14;" vertex="1" parent="1">
           <mxGeometry x="865" y="130" width="230" height="64" as="geometry"/>
         </mxCell>
-        <mxCell id="new-trap" value="统一 Trap/系统调用框架&#xa;中断、异常、系统调用同源分发" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#10b981;fontSize=13;" vertex="1" parent="1">
+        <mxCell id="new-trap" value="统一 Trap/系统调用框架&#xa;中断、异常、系统调用同源分发" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#10b981;fontSize=14;" vertex="1" parent="1">
           <mxGeometry x="865" y="230" width="230" height="64" as="geometry"/>
         </mxCell>
-        <mxCell id="new-resource" value="类型化资源生命周期&#xa;页、栈、文件、inode、中断保护" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#10b981;fontSize=13;" vertex="1" parent="1">
+        <mxCell id="new-resource" value="类型化资源生命周期&#xa;页、栈、文件、inode、中断保护" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#10b981;fontSize=14;" vertex="1" parent="1">
           <mxGeometry x="865" y="330" width="230" height="64" as="geometry"/>
         </mxCell>
-        <mxCell id="new-user" value="可交互教学闭环&#xa;ELF 用户程序、TTY/Shell、QEMU 测试" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#10b981;fontSize=13;" vertex="1" parent="1">
+        <mxCell id="new-user" value="可交互教学闭环&#xa;ELF 用户程序、TTY/Shell、QEMU 测试" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#10b981;fontSize=14;" vertex="1" parent="1">
           <mxGeometry x="865" y="430" width="230" height="64" as="geometry"/>
         </mxCell>
         <mxCell id="summary" value="亮点不在单点算法替换，而在跨体系结构、跨语言、跨用户态 ABI 的整机迁移：底层平台机制被重新接入，Unix V6++ 教学语义继续保留，Rust 类型系统用于表达更清楚的资源边界。" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#334155;fontSize=14;" vertex="1" parent="1">
