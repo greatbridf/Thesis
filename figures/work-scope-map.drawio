@@ -1,71 +1,71 @@
 <mxfile host="app.diagrams.net">
   <diagram name="work-scope-map" id="work-scope-map">
-    <mxGraphModel dx="1200" dy="720" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1160" pageHeight="760" math="0" shadow="0">
+    <mxGraphModel dx="1200" dy="720" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1440" pageHeight="820" math="0" shadow="0">
       <root>
         <mxCell id="0" style="fontSize=20;" />
         <mxCell id="1" parent="0"/>
         <mxCell id="old" value="main 分支&#xa;IA-32 / C++ / PC 设备" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eef2ff;strokeColor=#4f46e5;fontSize=21;fontStyle=1;" vertex="1" parent="1">
-          <mxGeometry x="40" y="290" width="190" height="90" as="geometry"/>
+          <mxGeometry x="20" y="275" width="260" height="120" as="geometry"/>
         </mxCell>
         <mxCell id="platform" value="平台移植&#xa;OpenSBI、Sv39、PLIC、UART、VirtIO" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ecfdf5;strokeColor=#059669;fontSize=20;" vertex="1" parent="1">
-          <mxGeometry x="310" y="80" width="230" height="77" as="geometry"/>
+          <mxGeometry x="340" y="70" width="320" height="92" as="geometry"/>
         </mxCell>
         <mxCell id="rust" value="Rust 重构&#xa;所有权、生命周期、Drop、RAII" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff7ed;strokeColor=#ea580c;fontSize=20;" vertex="1" parent="1">
-          <mxGeometry x="310" y="176" width="230" height="72" as="geometry"/>
+          <mxGeometry x="340" y="175" width="320" height="88" as="geometry"/>
         </mxCell>
         <mxCell id="trap" value="Trap 与系统调用&#xa;统一入口、上下文、错误返回" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0f9ff;strokeColor=#0284c7;fontSize=20;" vertex="1" parent="1">
-          <mxGeometry x="310" y="272" width="230" height="72" as="geometry"/>
+          <mxGeometry x="340" y="280" width="320" height="88" as="geometry"/>
         </mxCell>
         <mxCell id="proc" value="进程与用户态&#xa;调度、fork/exec/wait、ELF、信号" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fdf4ff;strokeColor=#a21caf;fontSize=20;" vertex="1" parent="1">
-          <mxGeometry x="310" y="368" width="230" height="72" as="geometry"/>
+          <mxGeometry x="340" y="385" width="320" height="88" as="geometry"/>
         </mxCell>
         <mxCell id="io" value="交互环境&#xa;文件接口、TTY、Shell、用户程序" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#475569;fontSize=20;" vertex="1" parent="1">
-          <mxGeometry x="310" y="464" width="230" height="72" as="geometry"/>
+          <mxGeometry x="340" y="490" width="320" height="88" as="geometry"/>
         </mxCell>
         <mxCell id="test" value="构建与验证&#xa;镜像生成、QEMU、功能测试" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fefce8;strokeColor=#ca8a04;fontSize=20;" vertex="1" parent="1">
-          <mxGeometry x="310" y="560" width="230" height="72" as="geometry"/>
+          <mxGeometry x="340" y="595" width="320" height="88" as="geometry"/>
         </mxCell>
         <mxCell id="new" value="当前系统&#xa;RISC-V / Rust / QEMU virt&#xa;可启动、可交互、可测试" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f1f5f9;strokeColor=#0f172a;fontSize=21;fontStyle=1;" vertex="1" parent="1">
-          <mxGeometry x="760" y="290" width="230" height="100" as="geometry"/>
+          <mxGeometry x="930" y="275" width="330" height="120" as="geometry"/>
         </mxCell>
         <mxCell id="focus" value="本文重点展开&#xa;Trap 与系统调用、进程生命周期、用户程序与交互验证" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#dc2626;dashed=1;fontSize=20;" vertex="1" parent="1">
-          <mxGeometry x="705" y="430" width="340" height="78" as="geometry"/>
+          <mxGeometry x="850" y="455" width="560" height="92" as="geometry"/>
         </mxCell>
         <mxCell id="e-old-platform" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;html=1;rounded=0;strokeColor=#64748b;" edge="1" parent="1" source="old" target="platform">
-          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="270" y="335" /><mxPoint x="270" y="116" /></Array></mxGeometry>
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="310" y="335" /><mxPoint x="310" y="116" /></Array></mxGeometry>
         </mxCell>
         <mxCell id="e-old-rust" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;html=1;rounded=0;strokeColor=#64748b;" edge="1" parent="1" source="old" target="rust">
-          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="270" y="335" /><mxPoint x="270" y="212" /></Array></mxGeometry>
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="310" y="335" /><mxPoint x="310" y="212" /></Array></mxGeometry>
         </mxCell>
         <mxCell id="e-old-trap" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;html=1;rounded=0;strokeColor=#64748b;" edge="1" parent="1" source="old" target="trap">
-          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="270" y="335" /><mxPoint x="270" y="308" /></Array></mxGeometry>
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="310" y="335" /><mxPoint x="310" y="308" /></Array></mxGeometry>
         </mxCell>
         <mxCell id="e-old-proc" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;html=1;rounded=0;strokeColor=#64748b;" edge="1" parent="1" source="old" target="proc">
-          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="270" y="335" /><mxPoint x="270" y="404" /></Array></mxGeometry>
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="310" y="335" /><mxPoint x="310" y="404" /></Array></mxGeometry>
         </mxCell>
         <mxCell id="e-old-io" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;html=1;rounded=0;strokeColor=#64748b;" edge="1" parent="1" source="old" target="io">
-          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="270" y="335" /><mxPoint x="270" y="500" /></Array></mxGeometry>
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="310" y="335" /><mxPoint x="310" y="500" /></Array></mxGeometry>
         </mxCell>
         <mxCell id="e-old-test" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;html=1;rounded=0;strokeColor=#64748b;" edge="1" parent="1" source="old" target="test">
-          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="270" y="335" /><mxPoint x="270" y="596" /></Array></mxGeometry>
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="310" y="335" /><mxPoint x="310" y="596" /></Array></mxGeometry>
         </mxCell>
         <mxCell id="e-platform-new" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;html=1;rounded=0;strokeColor=#64748b;" edge="1" parent="1" source="platform" target="new">
-          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="650" y="116" /><mxPoint x="650" y="340" /></Array></mxGeometry>
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="780" y="116" /><mxPoint x="780" y="340" /></Array></mxGeometry>
         </mxCell>
         <mxCell id="e-rust-new" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;html=1;rounded=0;strokeColor=#64748b;" edge="1" parent="1" source="rust" target="new">
-          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="650" y="212" /><mxPoint x="650" y="340" /></Array></mxGeometry>
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="780" y="212" /><mxPoint x="780" y="340" /></Array></mxGeometry>
         </mxCell>
         <mxCell id="e-trap-new" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;html=1;rounded=0;strokeColor=#64748b;" edge="1" parent="1" source="trap" target="new">
-          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="650" y="308" /><mxPoint x="650" y="340" /></Array></mxGeometry>
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="780" y="308" /><mxPoint x="780" y="340" /></Array></mxGeometry>
         </mxCell>
         <mxCell id="e-proc-new" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;html=1;rounded=0;strokeColor=#64748b;" edge="1" parent="1" source="proc" target="new">
-          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="650" y="404" /><mxPoint x="650" y="340" /></Array></mxGeometry>
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="780" y="404" /><mxPoint x="780" y="340" /></Array></mxGeometry>
         </mxCell>
         <mxCell id="e-io-new" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;html=1;rounded=0;strokeColor=#64748b;" edge="1" parent="1" source="io" target="new">
-          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="650" y="500" /><mxPoint x="650" y="340" /></Array></mxGeometry>
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="780" y="500" /><mxPoint x="780" y="340" /></Array></mxGeometry>
         </mxCell>
         <mxCell id="e-test-new" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;html=1;rounded=0;strokeColor=#64748b;" edge="1" parent="1" source="test" target="new">
-          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="650" y="596" /><mxPoint x="650" y="340" /></Array></mxGeometry>
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="780" y="596" /><mxPoint x="780" y="340" /></Array></mxGeometry>
         </mxCell>
       </root>
     </mxGraphModel>
