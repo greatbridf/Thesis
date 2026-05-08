@@ -2,33 +2,33 @@
   <diagram name="work-scope-map" id="work-scope-map">
     <mxGraphModel dx="1200" dy="720" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1160" pageHeight="760" math="0" shadow="0">
       <root>
-        <mxCell id="0" style="fontSize=16;" />
+        <mxCell id="0" style="fontSize=20;" />
         <mxCell id="1" parent="0"/>
-        <mxCell id="old" value="main 分支&#xa;IA-32 / C++ / PC 设备" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eef2ff;strokeColor=#4f46e5;fontSize=17;fontStyle=1;" vertex="1" parent="1">
+        <mxCell id="old" value="main 分支&#xa;IA-32 / C++ / PC 设备" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eef2ff;strokeColor=#4f46e5;fontSize=21;fontStyle=1;" vertex="1" parent="1">
           <mxGeometry x="40" y="290" width="190" height="90" as="geometry"/>
         </mxCell>
-        <mxCell id="platform" value="平台移植&#xa;OpenSBI、Sv39、PLIC、UART、VirtIO" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ecfdf5;strokeColor=#059669;fontSize=16;" vertex="1" parent="1">
+        <mxCell id="platform" value="平台移植&#xa;OpenSBI、Sv39、PLIC、UART、VirtIO" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ecfdf5;strokeColor=#059669;fontSize=20;" vertex="1" parent="1">
           <mxGeometry x="310" y="80" width="230" height="77" as="geometry"/>
         </mxCell>
-        <mxCell id="rust" value="Rust 重构&#xa;所有权、生命周期、Drop、RAII" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff7ed;strokeColor=#ea580c;fontSize=16;" vertex="1" parent="1">
+        <mxCell id="rust" value="Rust 重构&#xa;所有权、生命周期、Drop、RAII" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff7ed;strokeColor=#ea580c;fontSize=20;" vertex="1" parent="1">
           <mxGeometry x="310" y="176" width="230" height="72" as="geometry"/>
         </mxCell>
-        <mxCell id="trap" value="Trap 与系统调用&#xa;统一入口、上下文、错误返回" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0f9ff;strokeColor=#0284c7;fontSize=16;" vertex="1" parent="1">
+        <mxCell id="trap" value="Trap 与系统调用&#xa;统一入口、上下文、错误返回" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0f9ff;strokeColor=#0284c7;fontSize=20;" vertex="1" parent="1">
           <mxGeometry x="310" y="272" width="230" height="72" as="geometry"/>
         </mxCell>
-        <mxCell id="proc" value="进程与用户态&#xa;调度、fork/exec/wait、ELF、信号" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fdf4ff;strokeColor=#a21caf;fontSize=16;" vertex="1" parent="1">
+        <mxCell id="proc" value="进程与用户态&#xa;调度、fork/exec/wait、ELF、信号" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fdf4ff;strokeColor=#a21caf;fontSize=20;" vertex="1" parent="1">
           <mxGeometry x="310" y="368" width="230" height="72" as="geometry"/>
         </mxCell>
-        <mxCell id="io" value="交互环境&#xa;文件接口、TTY、Shell、用户程序" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#475569;fontSize=16;" vertex="1" parent="1">
+        <mxCell id="io" value="交互环境&#xa;文件接口、TTY、Shell、用户程序" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#475569;fontSize=20;" vertex="1" parent="1">
           <mxGeometry x="310" y="464" width="230" height="72" as="geometry"/>
         </mxCell>
-        <mxCell id="test" value="构建与验证&#xa;镜像生成、QEMU、功能测试" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fefce8;strokeColor=#ca8a04;fontSize=16;" vertex="1" parent="1">
+        <mxCell id="test" value="构建与验证&#xa;镜像生成、QEMU、功能测试" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fefce8;strokeColor=#ca8a04;fontSize=20;" vertex="1" parent="1">
           <mxGeometry x="310" y="560" width="230" height="72" as="geometry"/>
         </mxCell>
-        <mxCell id="new" value="当前系统&#xa;RISC-V / Rust / QEMU virt&#xa;可启动、可交互、可测试" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f1f5f9;strokeColor=#0f172a;fontSize=17;fontStyle=1;" vertex="1" parent="1">
+        <mxCell id="new" value="当前系统&#xa;RISC-V / Rust / QEMU virt&#xa;可启动、可交互、可测试" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f1f5f9;strokeColor=#0f172a;fontSize=21;fontStyle=1;" vertex="1" parent="1">
           <mxGeometry x="760" y="290" width="230" height="100" as="geometry"/>
         </mxCell>
-        <mxCell id="focus" value="本文重点展开&#xa;Trap 与系统调用、进程生命周期、用户程序与交互验证" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#dc2626;dashed=1;fontSize=16;" vertex="1" parent="1">
+        <mxCell id="focus" value="本文重点展开&#xa;Trap 与系统调用、进程生命周期、用户程序与交互验证" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#dc2626;dashed=1;fontSize=20;" vertex="1" parent="1">
           <mxGeometry x="705" y="430" width="340" height="78" as="geometry"/>
         </mxCell>
         <mxCell id="e-old-platform" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=block;html=1;rounded=0;strokeColor=#64748b;" edge="1" parent="1" source="old" target="platform">
