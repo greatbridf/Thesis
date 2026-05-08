@@ -4,7 +4,7 @@
       <root>
         <mxCell id="0" style="fontSize=20;" />
         <mxCell id="1" parent="0"/>
-        <mxCell id="old-title" value="重构前 main 分支" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eef2ff;strokeColor=#4f46e5;fontSize=22;fontStyle=1;" vertex="1" parent="1">
+        <mxCell id="old-title" value="重构前版本" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eef2ff;strokeColor=#4f46e5;fontSize=22;fontStyle=1;" vertex="1" parent="1">
           <mxGeometry x="60" y="40" width="230" height="50" as="geometry"/>
         </mxCell>
         <mxCell id="work-title" value="迁移与重构工作" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#334155;fontSize=22;fontStyle=1;" vertex="1" parent="1">

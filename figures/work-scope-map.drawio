@@ -4,7 +4,7 @@
       <root>
         <mxCell id="0" style="fontSize=20;" />
         <mxCell id="1" parent="0"/>
-        <mxCell id="old" value="main 分支&#xa;IA-32 / C++ / PC 设备" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eef2ff;strokeColor=#4f46e5;fontSize=21;fontStyle=1;" vertex="1" parent="1">
+        <mxCell id="old" value="重构前版本&#xa;IA-32 / C++ / PC 设备" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eef2ff;strokeColor=#4f46e5;fontSize=21;fontStyle=1;" vertex="1" parent="1">
           <mxGeometry x="20" y="275" width="260" height="120" as="geometry"/>
         </mxCell>
         <mxCell id="platform" value="平台移植&#xa;OpenSBI、Sv39、PLIC、UART、VirtIO" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ecfdf5;strokeColor=#059669;fontSize=20;" vertex="1" parent="1">

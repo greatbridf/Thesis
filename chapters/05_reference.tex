@@ -6,7 +6,7 @@
 
 终端、字符设备和 Shell 构成了用户直接接触到的系统环境。当前系统运行在 QEMU virt 机器的无图形串口模式下，用户输入首先由 UART 驱动接收，再进入 Console 与 TTY 层；TTY 完成规范输入、回显和控制字符处理后，唤醒正在等待输入的 Shell 进程。Shell 解析命令行并通过系统调用创建进程、装入用户程序、复制文件描述符或建立管道，由此把第 2 章的 Trap 和系统调用路径、第 3 章的进程生命周期路径连接为可在终端中观察的执行过程。
 
-相较原 \verb|main| 分支，当前交互环境的主要变化在设备模型和运行方式。原 IA-32/C++ 版本面向 PC 机器模型，终端输入输出与键盘、显示和传统中断控制器相关；RISC-V/Rust 版本则面向 OpenSBI 与 QEMU virt 平台，通过 UART 串口暴露交互界面，并使用 PLIC 分发外部中断。这样的适配没有改变 Unix V6++ 的命令行使用方式，但改变了命令输入、外部中断、进程唤醒和信号触发所依赖的底层路径。
+相较重构前版本，当前交互环境的主要变化在设备模型和运行方式。原 IA-32/C++ 版本面向 PC 机器模型，终端输入输出与键盘、显示和传统中断控制器相关；RISC-V/Rust 版本则面向 OpenSBI 与 QEMU virt 平台，通过 UART 串口暴露交互界面，并使用 PLIC 分发外部中断。这样的适配没有改变 Unix V6++ 的命令行使用方式，但改变了命令输入、外部中断、进程唤醒和信号触发所依赖的底层路径。
 
 Shell 启动后把标准输入和标准输出绑定到控制终端，普通命令通过 \verb|fork| 和 \verb|exec| 进入独立用户进程。内建命令 \verb|cd| 在 Shell 进程内执行，以便保留当前路径状态；外部命令则在子进程中完成参数传递、输入输出重定向和程序替换。该设计延续 Unix V6++ 原有的用户习惯，也便于在 QEMU 串口中观察父子进程、系统调用返回值和终端输出之间的关系。
 
@@ -34,7 +34,7 @@ TTY 层还与信号机制相连接。当输入字符等于中断、退出或挂�
 
 \figref{fig:build-pipeline} 展示了当前构建流程。顶层 \verb|make all| 依次构建工具、用户库、Shell、用户程序和内核，并将构建产物复制到 \verb|target/img-workspace|。随后，\verb|tools/filescanner| 扫描工作目录内容，\verb|tools/fs-editor| 生成 \verb|target/disk.img|。运行 RISC-V 目标时，\verb|make qemu-riscv64| 使用 \verb|qemu-system-riscv64|、\verb|-machine virt|、\verb|-bios default|、\verb|-nographic| 和 \verb|-kernel src/kernel.elf| 启动内核，同时通过 VirtIO MMIO 设备挂载 \verb|target/disk.img| 作为块设备后端\cite{qemu_riscv_doc}。
 
-相较 \verb|main| 分支，构建和运行对象发生了三类变化。原版本主要通过 CMake/Ninja 构建 C++ 内核，并通过 \verb|qemu-system-i386| 和 IDE 磁盘启动；当前版本增加 Rust 内核构建链和 RISC-V 运行目标。原用户态程序主要面向 IA-32/PE 或 32 位环境，当前用户态程序统一交叉编译为 ELF64/RISC-V。原系统运行依赖 PC 机器模型中的 BIOS、ATA 和传统中断设备；当前 RISC-V 目标通过 OpenSBI、QEMU virt、PLIC、UART 和 VirtIO Block 完成启动与设备访问。顶层 Makefile 仍保留 \verb|qemu|、\verb|qemug| 等旧目标，便于对比重构前后的平台差异；实际验证当前系统时，重点使用 \verb|qemu-riscv64| 和 \verb|qemu-riscv64g|。
+相较重构前版本，构建和运行对象发生了三类变化。原版本主要通过 CMake/Ninja 构建 C++ 内核，并通过 \verb|qemu-system-i386| 和 IDE 磁盘启动；当前版本增加 Rust 内核构建链和 RISC-V 运行目标。原用户态程序主要面向 IA-32/PE 或 32 位环境，当前用户态程序统一交叉编译为 ELF64/RISC-V。原系统运行依赖 PC 机器模型中的 BIOS、ATA 和传统中断设备；当前 RISC-V 目标通过 OpenSBI、QEMU virt、PLIC、UART 和 VirtIO Block 完成启动与设备访问。顶层 Makefile 仍保留 \verb|qemu|、\verb|qemug| 等旧目标，便于对比重构前后的平台差异；实际验证当前系统时，重点使用 \verb|qemu-riscv64| 和 \verb|qemu-riscv64g|。
 
 \begin{table}[htbp]
   \centering
@@ -134,19 +134,19 @@ TTY 层还与信号机制相连接。当输入字符等于中断、退出或挂�
 
 从构建结果看，当前系统已经形成面向 RISC-V 的构建链。Rust 内核可以以 \verb|no_std| 方式生成 RISC-V ELF，用户库、Shell 和用户程序可以交叉编译为 ELF64/RISC-V，可执行文件和资源可以写入 Unix V6++ 文件系统镜像，QEMU virt 机器可以通过 OpenSBI 加载内核并挂载 VirtIO 磁盘。上述结果表明，当前系统已经连通内核语言迁移、用户态程序、镜像制作和仿真运行等工程环节。
 
-功能结果显示，当前系统相较 \verb|main| 分支完成了三类迁移。体系结构由 IA-32/PC 迁移到 RISC-V/QEMU virt，启动、中断、系统调用、页表和设备访问路径均发生变化。内核主体由 C++ 改写为 Rust，进程、文件对象、文本段引用、中断保护等资源的生命周期表达更明确，错误返回也更多通过 \verb|Result| 和枚举呈现。用户态环境保持 Unix V6++ 的 Shell 和常用命令语义，原教学系统的使用方式得以延续。
+功能结果显示，当前系统相较重构前版本完成了三类迁移。体系结构由 IA-32/PC 迁移到 RISC-V/QEMU virt，启动、中断、系统调用、页表和设备访问路径均发生变化。内核主体由 C++ 改写为 Rust，进程、文件对象、文本段引用、中断保护等资源的生命周期表达更明确，错误返回也更多通过 \verb|Result| 和枚举呈现。用户态环境保持 Unix V6++ 的 Shell 和常用命令语义，原教学系统的使用方式得以延续。
 
 当前验证仍以手工交互和模块级观察为主，自动化程度有限。文件系统和 Buffer 管理虽然可以支撑基本命令与镜像访问，但其内部一致性、异常恢复和压力场景仍需要更系统的测试；进程退出状态、子进程时间累计等细节仍有简化；部分系统调用保留为空实现或返回 \verb|ENOSYS|。这些限制不影响本文所述的 RISC-V/Rust 移植主线，也说明系统仍处于教学内核的可运行框架阶段，后续需要继续补充自动化测试、压力测试和更完整的 Unix 语义。
 
 \section{结论与展望}
 
-本文围绕 Unix V6++ 教学操作系统面向 RISC-V 平台的移植与 Rust 重构展开研究。在保持 Unix V6++ 原有教学语义和用户态使用方式的基础上，系统将重构前 \verb|main| 分支中面向 IA-32/C++/PC 设备模型的内核，迁移为面向 RISC-V/QEMU virt 平台的 Rust 内核，并连通启动、地址空间、中断异常、系统调用、进程管理、设备适配、Shell 交互和构建验证等路径。
+本文围绕 Unix V6++ 教学操作系统面向 RISC-V 平台的移植与 Rust 重构展开研究。在保持 Unix V6++ 原有教学语义和用户态使用方式的基础上，系统将重构前版本中面向 IA-32/C++/PC 设备模型的内核，迁移为面向 RISC-V/QEMU virt 平台的 Rust 内核，并连通启动、地址空间、中断异常、系统调用、进程管理、设备适配、Shell 交互和构建验证等路径。
 
 平台迁移完成了 RISC-V 裸机内核的启动流程设计。系统通过 QEMU/OpenSBI 进入位于 \verb|0x80200000| 的内核入口，完成早期栈设置、BSS 清零、串口输出、链接脚本适配和初始化顺序组织；随后基于 Sv39 分页机制建立内核高地址映射、用户地址空间映射和 MMIO 设备映射，并通过 \verb|satp| 与 \verb|sfence.vma| 启用地址空间保护。物理内存管理保留内核页和用户页划分思想，接入 Buddy 分配器、slab 分配器和 Rust 全局分配器，为内核对象、用户进程图像和内核栈分配提供页级资源。
 
 内核事件处理部分基于 RISC-V 特权架构重写了 Trap 框架。系统使用 \verb|stvec| 建立统一入口，通过汇编保存寄存器和关键控制状态，再由 Rust 层根据 \verb|scause| 分发系统调用、时钟中断、外部中断和异常。系统调用接口从原 x86 寄存器约定迁移到 RISC-V \verb|a0| 至 \verb|a7| 的参数传递方式，用户态 C 库通过 \verb|ecall| 进入内核，内核保留 Unix V6++ 的主要系统调用编号和语义。时钟中断、PLIC 外部中断和 UART 输入路径接入后，调度、TTY 和信号处理可以在新平台上配合运行。
 
-进程管理和用户程序支持实现了进程控制块、进程状态机、优先级调度、睡眠唤醒、上下文切换以及 \verb|fork|、\verb|exec|、\verb|exit|、\verb|wait| 等核心进程系统调用。相较 \verb|main| 分支中的固定进程数组、x86 上下文和 PE 用户程序格式，当前系统使用 RISC-V \verb|TrapContext| 与 \verb|TaskContext| 表达用户态返回和内核态切换，使用 ELF64/RISC-V 作为主要用户程序格式，并由 \verb|exec| 完成程序段加载、用户栈构造和 argc/argv 传递。信号机制也迁移到 RISC-V 上下文模型下，可支持终端控制字符、用户发送信号和部分用户态异常到信号的转换。
+进程管理和用户程序支持实现了进程控制块、进程状态机、优先级调度、睡眠唤醒、上下文切换以及 \verb|fork|、\verb|exec|、\verb|exit|、\verb|wait| 等核心进程系统调用。相较重构前版本中的固定进程数组、x86 上下文和 PE 用户程序格式，当前系统使用 RISC-V \verb|TrapContext| 与 \verb|TaskContext| 表达用户态返回和内核态切换，使用 ELF64/RISC-V 作为主要用户程序格式，并由 \verb|exec| 完成程序段加载、用户栈构造和 argc/argv 传递。信号机制也迁移到 RISC-V 上下文模型下，可支持终端控制字符、用户发送信号和部分用户态异常到信号的转换。
 
 Rust 重构重新表达了教学内核中的资源管理边界。当前系统仍然保留裸机内核不可避免的底层操作，例如页表项修改、MMIO 访问、用户指针读取和汇编上下文切换；在这些必要的 \verb|unsafe| 边界之外，页资源、内核栈、文本段引用、inode 引用、文件引用和中断开关保护等对象更多通过所有权、生命周期、\verb|Drop| 和 RAII 风格封装表达。原 C++ 版本中不少资源释放依赖调用路径上的显式配对操作，当前 Rust 版本把部分释放责任收束到类型本身，使读者在追踪进程退出、文件关闭和页回收时更容易看到资源由谁持有、何时释放。
 
