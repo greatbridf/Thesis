@@ -2,48 +2,48 @@
   <diagram id="conclusion-roadmap" name="成果与展望">
     <mxGraphModel dx="1394" dy="862" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1280" pageHeight="720" math="0" shadow="0">
       <root>
-        <mxCell id="0" style="fontSize=14;">
+        <mxCell id="0" style="fontSize=16;" />
         <mxCell id="1" parent="0"/>
-        <mxCell id="title" value="Unix V6++ RISC-V/Rust 移植与重构成果闭环" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=24;fontStyle=1;fontColor=#1F2937;" vertex="1" parent="1">
+        <mxCell id="title" value="Unix V6++ RISC-V/Rust 移植与重构成果闭环" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=26;fontStyle=1;fontColor=#1F2937;" vertex="1" parent="1">
           <mxGeometry x="210" y="30" width="860" height="40" as="geometry"/>
         </mxCell>
-        <mxCell id="before" value="重构前基础&#xa;IA-32 / C++ / PC 设备模型&#xa;Unix V6++ 教学语义" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=#E8EEF7;strokeColor=#4D6B8A;fontSize=15;fontColor=#1F2937;spacing=12;" vertex="1" parent="1">
+        <mxCell id="before" value="重构前基础&#xa;IA-32 / C++ / PC 设备模型&#xa;Unix V6++ 教学语义" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=#E8EEF7;strokeColor=#4D6B8A;fontSize=17;fontColor=#1F2937;spacing=12;" vertex="1" parent="1">
           <mxGeometry x="70" y="290" width="210" height="110" as="geometry"/>
         </mxCell>
-        <mxCell id="core" value="本文完成的核心工作&#xa;RISC-V 平台迁移&#xa;Rust 内核主体重构&#xa;QEMU 可运行验证闭环" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=#E8F5E9;strokeColor=#4F7D58;fontSize=16;fontStyle=1;fontColor=#1F2937;spacing=12;" vertex="1" parent="1">
+        <mxCell id="core" value="本文完成的核心工作&#xa;RISC-V 平台迁移&#xa;Rust 内核主体重构&#xa;QEMU 可运行验证闭环" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=#E8F5E9;strokeColor=#4F7D58;fontSize=18;fontStyle=1;fontColor=#1F2937;spacing=12;" vertex="1" parent="1">
           <mxGeometry x="505" y="270" width="270" height="150" as="geometry"/>
         </mxCell>
-        <mxCell id="boot" value="启动与地址空间&#xa;OpenSBI 入口、BSS 清零、Sv39 页表、MMIO 映射" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=#FFF7E6;strokeColor=#B7791F;fontSize=14;fontColor=#1F2937;spacing=10;" vertex="1" parent="1">
+        <mxCell id="boot" value="启动与地址空间&#xa;OpenSBI 入口、BSS 清零、Sv39 页表、MMIO 映射" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=#FFF7E6;strokeColor=#B7791F;fontSize=16;fontColor=#1F2937;spacing=10;" vertex="1" parent="1">
           <mxGeometry x="380" y="110" width="240" height="82" as="geometry"/>
         </mxCell>
-        <mxCell id="trap" value="Trap 与系统调用&#xa;统一入口、时钟/外部中断、ecall 分发、错误返回" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=#FCE8E8;strokeColor=#A94A4A;fontSize=14;fontColor=#1F2937;spacing=10;" vertex="1" parent="1">
+        <mxCell id="trap" value="Trap 与系统调用&#xa;统一入口、时钟/外部中断、ecall 分发、错误返回" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=#FCE8E8;strokeColor=#A94A4A;fontSize=16;fontColor=#1F2937;spacing=10;" vertex="1" parent="1">
           <mxGeometry x="660" y="110" width="240" height="82" as="geometry"/>
         </mxCell>
-        <mxCell id="proc" value="进程与用户程序&#xa;PCB、调度、fork/exec/wait、ELF64/RISC-V 加载、信号" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=#EAF7F7;strokeColor=#3F7F82;fontSize=14;fontColor=#1F2937;spacing=10;" vertex="1" parent="1">
+        <mxCell id="proc" value="进程与用户程序&#xa;PCB、调度、fork/exec/wait、ELF64/RISC-V 加载、信号" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=#EAF7F7;strokeColor=#3F7F82;fontSize=16;fontColor=#1F2937;spacing=10;" vertex="1" parent="1">
           <mxGeometry x="380" y="500" width="240" height="90" as="geometry"/>
         </mxCell>
-        <mxCell id="shell" value="设备与交互环境&#xa;VirtIO Block、UART/TTY、Shell、文件与管道接口" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=#F1EAF7;strokeColor=#73519B;fontSize=14;fontColor=#1F2937;spacing=10;" vertex="1" parent="1">
+        <mxCell id="shell" value="设备与交互环境&#xa;VirtIO Block、UART/TTY、Shell、文件与管道接口" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=#F1EAF7;strokeColor=#73519B;fontSize=16;fontColor=#1F2937;spacing=10;" vertex="1" parent="1">
           <mxGeometry x="660" y="500" width="240" height="90" as="geometry"/>
         </mxCell>
-        <mxCell id="future" value="后续完善方向&#xa;自动化测试体系&#xa;异常与压力场景覆盖&#xa;系统调用语义补全&#xa;更多设备与实验文档" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=#F8FAFC;strokeColor=#64748B;fontSize=15;fontColor=#1F2937;spacing=12;" vertex="1" parent="1">
+        <mxCell id="future" value="后续完善方向&#xa;自动化测试体系&#xa;异常与压力场景覆盖&#xa;系统调用语义补全&#xa;更多设备与实验文档" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;fillColor=#F8FAFC;strokeColor=#64748B;fontSize=17;fontColor=#1F2937;spacing=12;" vertex="1" parent="1">
           <mxGeometry x="1000" y="270" width="220" height="150" as="geometry"/>
         </mxCell>
-        <mxCell id="e1" value="迁移目标" style="endArrow=block;html=1;rounded=0;strokeColor=#4D6B8A;fontSize=14;fontColor=#374151;" edge="1" parent="1" source="before" target="core">
+        <mxCell id="e1" value="迁移目标" style="endArrow=block;html=1;rounded=0;strokeColor=#4D6B8A;fontSize=16;fontColor=#374151;" edge="1" parent="1" source="before" target="core">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e2" value="支撑" style="endArrow=block;html=1;rounded=0;strokeColor=#B7791F;fontSize=14;fontColor=#374151;" edge="1" parent="1" source="boot" target="core">
+        <mxCell id="e2" value="支撑" style="endArrow=block;html=1;rounded=0;strokeColor=#B7791F;fontSize=16;fontColor=#374151;" edge="1" parent="1" source="boot" target="core">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e3" value="支撑" style="endArrow=block;html=1;rounded=0;strokeColor=#A94A4A;fontSize=14;fontColor=#374151;" edge="1" parent="1" source="trap" target="core">
+        <mxCell id="e3" value="支撑" style="endArrow=block;html=1;rounded=0;strokeColor=#A94A4A;fontSize=16;fontColor=#374151;" edge="1" parent="1" source="trap" target="core">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e4" value="形成用户态运行" style="endArrow=block;html=1;rounded=0;strokeColor=#3F7F82;fontSize=14;fontColor=#374151;" edge="1" parent="1" source="proc" target="core">
+        <mxCell id="e4" value="形成用户态运行" style="endArrow=block;html=1;rounded=0;strokeColor=#3F7F82;fontSize=16;fontColor=#374151;" edge="1" parent="1" source="proc" target="core">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e5" value="形成交互闭环" style="endArrow=block;html=1;rounded=0;strokeColor=#73519B;fontSize=14;fontColor=#374151;" edge="1" parent="1" source="shell" target="core">
+        <mxCell id="e5" value="形成交互闭环" style="endArrow=block;html=1;rounded=0;strokeColor=#73519B;fontSize=16;fontColor=#374151;" edge="1" parent="1" source="shell" target="core">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e6" value="验证后继续扩展" style="endArrow=block;html=1;rounded=0;strokeColor=#64748B;fontSize=14;fontColor=#374151;" edge="1" parent="1" source="core" target="future">
+        <mxCell id="e6" value="验证后继续扩展" style="endArrow=block;html=1;rounded=0;strokeColor=#64748B;fontSize=16;fontColor=#374151;" edge="1" parent="1" source="core" target="future">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
       </root>
