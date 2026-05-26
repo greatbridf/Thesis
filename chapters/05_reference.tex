@@ -34,7 +34,7 @@ TTY 层还与信号机制相连接。当输入字符等于中断、退出或挂�
 
 \figref{fig:build-pipeline} 展示了当前构建流程。顶层 \verb|make all| 依次构建工具、用户库、Shell、用户程序和内核，并将构建产物复制到 \verb|target/img-workspace|。随后，\verb|tools/filescanner| 扫描工作目录内容，\verb|tools/fs-editor| 生成 \verb|target/disk.img|。运行 RISC-V 目标时，\verb|make qemu-riscv64| 使用 \verb|qemu-system-riscv64|、\verb|-machine virt|、\verb|-bios default|、\verb|-nographic| 和 \verb|-kernel src/kernel.elf| 启动内核，同时通过 VirtIO MMIO 设备挂载 \verb|target/disk.img| 作为块设备后端\cite{qemu_riscv_doc}。
 
-相较重构前版本，构建和运行对象发生了三类变化。原版本主要通过 CMake/Ninja 构建 C++ 内核，并通过 \verb|qemu-system-i386| 和 IDE 磁盘启动；当前版本增加 Rust 内核构建链和 RISC-V 运行目标。原用户态程序主要面向 IA-32/PE 或 32 位环境，当前用户态程序统一交叉编译为 ELF64/RISC-V。原系统运行依赖 PC 机器模型中的 BIOS、ATA 和传统中断设备；当前 RISC-V 目标通过 OpenSBI、QEMU virt、PLIC、UART 和 VirtIO Block 完成启动与设备访问。顶层 Makefile 仍保留 \verb|qemu|、\verb|qemug| 等旧目标，便于对比重构前后的平台差异；实际验证当前系统时，重点使用 \verb|qemu-riscv64| 和 \verb|qemu-riscv64g|。
+相较重构前版本，构建和运行对象发生了三类变化。原版本主要通过 CMake/Ninja 构建 C++ 内核，并通过 \verb|qemu-system-i386| 和 IDE 磁盘启动；当前版本增加 Rust 内核构建链和 RISC-V 运行目标。原用户态程序主要面向 IA-32/PE 或 32 位环境，当前用户态程序统一交叉编译为 ELF64/RISC-V。原系统运行依赖 PC 机器模型中的 BIOS、ATA 和传统中断设备；当前 RISC-V 目标通过 OpenSBI、QEMU virt、PLIC、UART 和 VirtIO Block 完成启动与设备访问。顶层 Makefile 仍保留 \verb|qemu|、\verb|qemug| 等旧目标，便于对比重构前后的平台差异（\tabref{tab:build-targets}）；实际验证当前系统时，重点使用 \verb|qemu-riscv64| 和 \verb|qemu-riscv64g|。
 
 \begin{table}[htbp]
   \centering
@@ -54,13 +54,9 @@ TTY 层还与信号机制相连接。当输入字符等于中断、退出或挂�
   \end{tabular}
 \end{table}
 
-\section{功能测试与运行结果}
-
-当前系统的验证以 QEMU 中的交互测试为主，辅以构建目标和启动日志检查。启动阶段确认内核可以通过 OpenSBI 进入 Rust 入口，完成页表、串口、Trap、PLIC、定时器、根目录和控制终端初始化，并进入 \verb|/Shell.exe|。进入 Shell 后，本文选择四组能够体现重点路径的测例进行说明：重定向与文件读取、单进程与多子进程创建、用户态信号处理，以及终端 Ctrl-C 触发的前台进程中断。
-
 \subsection{重定向与文件读取测试}
 
-\verb|ls > output| 与 \verb|cat output| 可以连续观察 Shell 重定向、用户程序执行和文件描述符恢复过程。Shell 读取第一条命令后识别出输出重定向，随后 \verb|fork| 子进程；子进程创建或打开 \verb|output|，关闭原标准输出并把目标文件复制到文件描述符 1，再执行 \verb|/bin/ls|。\verb|ls.c| 的主体逻辑是打开目录并按目录项读取内容，普通模式下把文件名写到标准输出。由于标准输出已经被重定向，这些输出不会出现在终端，而是写入 \verb|output|。父进程在 \verb|wait| 返回后重新显示 Shell 提示符。执行 \verb|cat output| 时，Shell 再次创建子进程并执行 \verb|cat.c|；该程序打开 \verb|output|，循环读取缓冲区并写回标准输出，此时标准输出仍是终端，因此应能看到上一条 \verb|ls| 命令产生的目录列表。该组合覆盖了 Shell 命令解析、\verb|fork|/\verb|exec|、文件打开、描述符复制、父进程等待和用户程序退出回收等路径。
+\verb|ls > output| 与 \verb|cat output| 可以连续观察 Shell 重定向、用户程序执行和文件描述符恢复过程。Shell 读取第一条命令后识别出输出重定向，随后 \verb|fork| 子进程；子进程创建或打开 \verb|output|，关闭原标准输出并把目标文件复制到文件描述符 1，再执行 \verb|/bin/ls|。\verb|ls.c| 的主体逻辑是打开目录并按目录项读取内容，普通模式下把文件名写到标准输出。由于标准输出已经被重定向，这些输出不会出现在终端，而是写入 \verb|output|。父进程在 \verb|wait| 返回后重新显示 Shell 提示符。执行 \verb|cat output| 时，Shell 再次创建子进程并执行 \verb|cat.c|；该程序打开 \verb|output|，循环读取缓冲区并写回标准输出，此时标准输出仍是终端，因此应能看到上一条 \verb|ls| 命令产生的目录列表。该组合覆盖了 Shell 命令解析、\verb|fork|/\verb|exec|、文件打开、描述符复制、父进程等待和用户程序退出回收等路径（\figref{fig:test-ls-cat-flow}、\figref{fig:test-ls-cat-screenshot}）。
 
 \begin{figure}[htbp]
   \centering
@@ -76,7 +72,7 @@ TTY 层还与信号机制相连接。当输入字符等于中断、退出或挂�
 
 \subsection{进程创建与等待测试}
 
-\verb|fork| 与 \verb|forks| 分别用于观察单个用户进程的基本系统调用路径和多次创建子进程后的等待行为。\verb|fork.c| 的逻辑较短，程序调用 \verb|getpid| 取得当前进程号，输出 \verb|My PID is ...| 后调用 \verb|exit(0)|。该测例虽然没有在程序内部再次调用 \verb|fork|，但从 Shell 角度看仍经过一次完整的外部命令执行路径，即 Shell 创建子进程，子进程 \verb|exec| 为 \verb|fork.exe|，程序完成系统调用并退出，父 Shell 通过 \verb|wait| 回收后继续工作。\verb|forks.c| 更直接地验证父子进程关系：程序先输出父进程 PID，然后进行 3 次循环，每轮调用 \verb|fork|；子进程输出自身 PID 后结束，父进程则调用 \verb|wait| 等待对应子进程退出。运行结果中应出现父进程和若干子进程的 PID 输出，并且 Shell 提示符只在程序整体结束后重新出现。这个现象说明父进程等待逻辑能够避免多个子进程输出尚未结束时 Shell 提前返回，也能说明进程创建、状态转换、僵尸进程回收和终端输出路径已经连通。
+\verb|fork| 与 \verb|forks| 分别用于观察单个用户进程的基本系统调用路径和多次创建子进程后的等待行为。\verb|fork.c| 的逻辑较短，程序调用 \verb|getpid| 取得当前进程号，输出 \verb|My PID is ...| 后调用 \verb|exit(0)|。该测例虽然没有在程序内部再次调用 \verb|fork|，但从 Shell 角度看仍经过一次完整的外部命令执行路径，即 Shell 创建子进程，子进程 \verb|exec| 为 \verb|fork.exe|，程序完成系统调用并退出，父 Shell 通过 \verb|wait| 回收后继续工作。\verb|forks.c| 更直接地验证父子进程关系：程序先输出父进程 PID，然后进行 3 次循环，每轮调用 \verb|fork|；子进程输出自身 PID 后结束，父进程则调用 \verb|wait| 等待对应子进程退出。运行结果中应出现父进程和若干子进程的 PID 输出，并且 Shell 提示符只在程序整体结束后重新出现。这个现象说明父进程等待逻辑能够避免多个子进程输出尚未结束时 Shell 提前返回，也能说明进程创建、状态转换、僵尸进程回收和终端输出路径已经连通（\figref{fig:test-fork-flow}、\figref{fig:test-fork-screenshot}）。
 
 \begin{figure}[htbp]
   \centering
@@ -92,7 +88,7 @@ TTY 层还与信号机制相连接。当输入字符等于中断、退出或挂�
 
 \subsection{进程间信号处理测试}
 
-\verb|sig| 测例用于验证用户态信号处理函数的安装、父子进程间信号发送和信号返回后的进程继续执行。\verb|sig.c| 首先通过 \verb|signal(SIGUSR2, SIGUSR2_Handler)| 为 \verb|SIGUSR2| 安装处理函数，然后调用 \verb|fork|。子进程进入 \verb|sleep(50)|，处于等待被唤醒或被信号打断的状态；父进程短暂 \verb|sleep(1)| 后调用 \verb|kill(pid, SIGUSR2)|，把信号发送给子进程。内核在目标进程上记录待处理信号，并在合适的用户态返回点构造信号处理上下文，使子进程转入 \verb|SIGUSR2_Handler|。因此运行结果中应先看到父进程发送信号的提示，再看到子进程处理函数输出的 \verb|This is #SIGUSR2 signal handler!|。处理函数返回后，子进程继续执行原程序，打印收到父进程信号后的提示并退出；父进程 \verb|wait| 后输出子进程退出状态和进程号。该测例可以说明信号并不是单纯终止进程，而是能够在用户态安装处理函数、临时改变执行位置并最终回到进程生命周期管理路径。
+\verb|sig| 测例用于验证用户态信号处理函数的安装、父子进程间信号发送和信号返回后的进程继续执行。\verb|sig.c| 首先通过 \verb|signal(SIGUSR2, SIGUSR2_Handler)| 为 \verb|SIGUSR2| 安装处理函数，然后调用 \verb|fork|。子进程进入 \verb|sleep(50)|，处于等待被唤醒或被信号打断的状态；父进程短暂 \verb|sleep(1)| 后调用 \verb|kill(pid, SIGUSR2)|，把信号发送给子进程。内核在目标进程上记录待处理信号，并在合适的用户态返回点构造信号处理上下文，使子进程转入 \verb|SIGUSR2_Handler|。因此运行结果中应先看到父进程发送信号的提示，再看到子进程处理函数输出的 \verb|This is #SIGUSR2 signal handler!|。处理函数返回后，子进程继续执行原程序，打印收到父进程信号后的提示并退出；父进程 \verb|wait| 后输出子进程退出状态和进程号。该测例可以说明信号并不是单纯终止进程，而是能够在用户态安装处理函数、临时改变执行位置并最终回到进程生命周期管理路径（\figref{fig:test-sig-flow}、\figref{fig:test-sig-screenshot}）。
 
 \begin{figure}[htbp]
   \centering
@@ -108,7 +104,7 @@ TTY 层还与信号机制相连接。当输入字符等于中断、退出或挂�
 
 \subsection{终端 Ctrl-C 信号测试}
 
-\verb|sigTest| 后按下 Ctrl-C 用于验证终端控制字符到前台进程信号的路径。\verb|sigTest.c| 启动后输出 \verb|Getting into sleep.|，随后调用 \verb|sleep(50)|，正常情况下会在睡眠结束后输出 \verb|Wakeup.|。测试时在睡眠期间按下 Ctrl-C，串口输入经过 UART 中断进入 TTY 层；TTY 识别到中断控制字符后，不把它作为普通输入交给应用程序，而是向当前前台进程发送 \verb|SIGINT|。若该进程没有为 \verb|SIGINT| 安装用户态处理函数，内核按默认动作处理该信号，前台 \verb|sigTest| 进程应被打断并退出，Shell 随后重新显示提示符。若终端中没有出现 \verb|Wakeup.|，而是直接回到 Shell，则说明睡眠等待被信号路径打断，TTY、信号递送、进程状态更新和父进程等待之间能够协同工作。该测例与 \verb|sig| 的区别在于信号来源不是用户程序显式调用 \verb|kill|，而是来自终端输入层，因而更能体现交互环境与进程控制之间的连接。
+\verb|sigTest| 后按下 Ctrl-C 用于验证终端控制字符到前台进程信号的路径。\verb|sigTest.c| 启动后输出 \verb|Getting into sleep.|，随后调用 \verb|sleep(50)|，正常情况下会在睡眠结束后输出 \verb|Wakeup.|。测试时在睡眠期间按下 Ctrl-C，串口输入经过 UART 中断进入 TTY 层；TTY 识别到中断控制字符后，不把它作为普通输入交给应用程序，而是向当前前台进程发送 \verb|SIGINT|。若该进程没有为 \verb|SIGINT| 安装用户态处理函数，内核按默认动作处理该信号，前台 \verb|sigTest| 进程应被打断并退出，Shell 随后重新显示提示符。若终端中没有出现 \verb|Wakeup.|，而是直接回到 Shell，则说明睡眠等待被信号路径打断，TTY、信号递送、进程状态更新和父进程等待之间能够协同工作。该测例与 \verb|sig| 的区别在于信号来源不是用户程序显式调用 \verb|kill|，而是来自终端输入层，因而更能体现交互环境与进程控制之间的连接（\figref{fig:test-sigint-flow}、\figref{fig:test-sigint-screenshot}）。
 
 \begin{figure}[htbp]
   \centering

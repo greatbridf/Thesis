@@ -6,7 +6,7 @@
 
 当前系统通过 QEMU 的 \verb|-kernel| 参数加载 RISC-V 内核镜像，并使用 OpenSBI 作为固件层。OpenSBI 完成机器模式下的基础初始化后，将控制权转交给内核。内核入口由链接脚本 \verb|src/kernel-riscv64.ld| 指定，入口符号为 \verb|_start|，加载地址为 \verb|0x80200000|。该地址位于 QEMU virt 平台常用的 DRAM 区域内，并避开了 OpenSBI 占用的低地址空间。
 
-链接脚本将内核划分为 \verb|.bootstrap|、\verb|.text|、\verb|.rodata|、\verb|.data| 和 \verb|.bss| 等段。其中 \verb|.bootstrap.entry| 保存最早执行的入口代码，\verb|.bootstrap.stack| 保存启动阶段使用的静态栈空间，\verb|__bss_start|、\verb|__bss_end| 和 \verb|__kernel_end| 等符号供 Rust 代码在运行时定位 BSS 段和内核结束位置。内核入口 \verb|_start| 使用 Rust 裸函数和内联汇编实现，先将栈指针 \verb|sp| 设置到预留的 bootstrap 栈顶，再跳转到 \verb|riscv64_rust_entry|。Rust 入口清零 BSS 段，初始化串口、页表、页分配器、0 号进程、Trap、缓冲区、PLIC、定时器、文件系统根目录和控制终端，随后创建初始进程并进入调度器。
+链接脚本将内核划分为 \verb|.bootstrap|、\verb|.text|、\verb|.rodata|、\verb|.data| 和 \verb|.bss| 等段。其中 \verb|.bootstrap.entry| 保存最早执行的入口代码，\verb|.bootstrap.stack| 保存启动阶段使用的静态栈空间，\verb|__bss_start|、\verb|__bss_end| 和 \verb|__kernel_end| 等符号供 Rust 代码在运行时定位 BSS 段和内核结束位置。内核入口 \verb|_start| 使用 Rust 裸函数和内联汇编实现，先将栈指针 \verb|sp| 设置到预留的 bootstrap 栈顶，再跳转到 \verb|riscv64_rust_entry|。Rust 入口清零 BSS 段，初始化串口、页表、页分配器、0 号进程、Trap、缓冲区、PLIC、定时器、文件系统根目录和控制终端，随后创建初始进程并进入调度器（\tabref{tab:riscv-boot-steps}）。
 
 \begin{table}[htbp]
   \centering
@@ -49,7 +49,7 @@ RISC-V 将同步异常、异步中断和系统调用统一纳入 Trap 机制。�
 
 \section{异常与中断分发}
 
-进入 Rust 层后，\verb|trap_handler| 通过 \verb|TrapContext::cause| 读取 \verb|scause|，并区分中断和异常。中断类主要处理 Supervisor Timer 和 Supervisor External，异常类主要处理 Breakpoint、Illegal Instruction、User Environment Call、Instruction/Load/Store Page Fault 以及若干访问异常。这里使用枚举和模式匹配表达分发逻辑，代码按照 \verb|Trap::Interrupt|、\verb|Trap::Exception|、\verb|Interrupt::SupervisorTimer|、\verb|Exception::UserEnvCall| 等分支展开，减少裸整数常量和多层判断。
+进入 Rust 层后，\verb|trap_handler| 通过 \verb|TrapContext::cause| 读取 \verb|scause|，并区分中断和异常。中断类主要处理 Supervisor Timer 和 Supervisor External，异常类主要处理 Breakpoint、Illegal Instruction、User Environment Call、Instruction/Load/Store Page Fault 以及若干访问异常。这里使用枚举和模式匹配表达分发逻辑（\figref{fig:trap-dispatch}），代码按照 \verb|Trap::Interrupt|、\verb|Trap::Exception|、\verb|Interrupt::SupervisorTimer|、\verb|Exception::UserEnvCall| 等分支展开，减少裸整数常量和多层判断。
 
 \begin{figure}[htbp]
   \centering

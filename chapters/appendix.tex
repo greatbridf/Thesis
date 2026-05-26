@@ -1,6 +1,6 @@
 \appendixsection{主要系统调用表}\label{sec:appendix-syscalls}
 
-本附录列出当前系统中与用户态 Shell 和常用程序运行关系较密切的系统调用。不同调用在内核中的具体处理函数分布于进程、文件、时间、信号和终端等模块，表中仅保留论文正文分析所需的接口层信息。
+本附录列出当前系统中与用户态 Shell 和常用程序运行关系较密切的系统调用。不同调用在内核中的具体处理函数分布于进程、文件、时间、信号和终端等模块，表中仅保留论文正文分析所需的接口层信息（\tabref{tab:appendix-syscalls}）。
 
 \begin{table}[htbp]
   \caption{当前系统主要系统调用}\label{tab:appendix-syscalls}
@@ -20,7 +20,7 @@
 
 \appendixsection{地址空间与磁盘布局}\label{sec:appendix-layout}
 
-当前 RISC-V 内核由 QEMU 加载到 \verb|0x80200000|，物理内存基址为 \verb|0x80000000|。内核建立高地址映射后，通过 \verb|0xc0000000| 起始的窗口访问物理内存，并通过 \verb|0xf0000000| 起始的 MMIO 映射访问 UART、PLIC 和 VirtIO 等设备。用户空间从低地址开始布置，ELF 加载器将可装入段、数据区和用户栈映射到进程页表中；\verb|exec| 完成后，\verb|argc| 和 \verb|argv| 位于用户栈顶附近。
+当前 RISC-V 内核由 QEMU 加载到 \verb|0x80200000|，物理内存基址为 \verb|0x80000000|。内核建立高地址映射后，通过 \verb|0xc0000000| 起始的窗口访问物理内存，并通过 \verb|0xf0000000| 起始的 MMIO 映射访问 UART、PLIC 和 VirtIO 等设备。用户空间从低地址开始布置，ELF 加载器将可装入段、数据区和用户栈映射到进程页表中；\verb|exec| 完成后，\verb|argc| 和 \verb|argv| 位于用户栈顶附近（\tabref{tab:appendix-layout}）。
 
 \begin{table}[htbp]
   \caption{当前系统主要布局约定}\label{tab:appendix-layout}
@@ -44,6 +44,8 @@
 当前系统的常用运行入口由 Makefile 提供。普通交互运行使用 \verb|make qemu-riscv64|，该目标启动 \verb|qemu-system-riscv64| 的 virt 机器，使用 OpenSBI 默认固件，并通过 VirtIO MMIO 设备挂载文件系统镜像。需要调试内核时可使用 \verb|make qemu-riscv64g| 启动 GDB stub，再由交叉 GDB 连接到对应端口。Rust 内核的类型检查可通过 \verb|make check| 执行，构建过程会使用 RISC-V 目标和裸机标准库子集。
 
 \appendixsection{关键数据结构说明}\label{sec:appendix-structures}
+
+正文涉及的关键数据结构如\tabref{tab:appendix-structures}所示。
 
 \begin{table}[htbp]
   \caption{正文涉及的关键数据结构}\label{tab:appendix-structures}
